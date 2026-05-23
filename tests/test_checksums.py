@@ -3,7 +3,7 @@ from pathlib import Path
 import tempfile
 import json
 
-from ki_addon.engine.checksums import (
+from anki_git.engine.checksums import (
     file_hash,
     content_hash,
     notes_hash,

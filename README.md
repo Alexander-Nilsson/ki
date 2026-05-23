@@ -1,12 +1,12 @@
-# ki Sync — Git Version Control for Anki
+# AnkiGit — Git Version Control for Anki
 
-**ki Sync** is an Anki addon that provides Git-based version control for your Anki collections. Export your collection to a human-readable Git repo, track every change, collaborate on decks, and roll back to any point in history.
+**AnkiGit** is an Anki addon that provides Git-based version control for your Anki collections. Export your collection to a human-readable Git repo, track every change, collaborate on decks, and roll back to any point in history.
 
 Built on the foundation of [ki](https://github.com/langfield/ki) — reimagined as a proper Anki addon with a clean Qt UI, thread-safe collection access, and three-way merge conflict resolution.
 
 ## Status
 
-Under active development. MVP is a read-only snapshot tool (Tools > ki Sync > Take Snapshot).
+Under active development. MVP is a read-only snapshot tool (Tools > AnkiGit > Take Snapshot).
 
 ## Features (Roadmap)
 
@@ -22,7 +22,7 @@ Under active development. MVP is a read-only snapshot tool (Tools > ki Sync > Ta
 ## Architecture
 
 ```
-ki_addon/
+anki_git/
 ├── __init__.py          # Anki hook registration only
 ├── addon.py             # Qt UI: menus, dialogs, settings
 ├── engine/

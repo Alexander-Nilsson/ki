@@ -6,7 +6,7 @@ from aqt.qt import (
     QDialogButtonBox,
 )
 
-from ki_addon.engine.conflict import ConflictReport, ConflictType, NoteConflict
+from anki_git.engine.conflict import ConflictReport, ConflictType, NoteConflict
 
 
 class ConflictResolutionDialog(QDialog):
@@ -14,7 +14,7 @@ class ConflictResolutionDialog(QDialog):
         super().__init__(parent)
         self.report = report
         self.resolutions: dict = {}
-        self.setWindowTitle("ki Sync — Conflict Resolution")
+        self.setWindowTitle("AnkiGit — Conflict Resolution")
         self.setMinimumSize(700, 500)
         self._setup_ui()
 

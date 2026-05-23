@@ -5,8 +5,8 @@ from typing import Dict, List, Tuple
 from anki.collection import Collection
 from anki.models import NotetypeDict
 
-from ki_addon.engine.checksums import notes_hash, load_meta, save_meta
-from ki_addon.engine.git_ops import (
+from anki_git.engine.checksums import notes_hash, load_meta, save_meta
+from anki_git.engine.git_ops import (
     get_or_init_repo,
     stage_all,
     ensure_gitignore,
@@ -14,12 +14,12 @@ from ki_addon.engine.git_ops import (
     push_to_remote,
     is_dirty,
 )
-from ki_addon.formats.notetype_yaml import (
+from anki_git.formats.notetype_yaml import (
     Notetype,
     write_notetype,
     read_all_notetypes,
 )
-from ki_addon.formats.notes_md import Note, write_notes_file
+from anki_git.formats.notes_md import Note, write_notes_file
 
 
 DECK_NOTES_FILE = "notes.md"

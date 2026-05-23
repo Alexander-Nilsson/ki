@@ -6,14 +6,14 @@ from aqt.qt import (
     QFileDialog, QFormLayout, QGroupBox,
 )
 
-from ki_addon.config import KiSyncConfig
+from anki_git.config import KiSyncConfig
 
 
 class SettingsDialog:
     def __init__(self, config: KiSyncConfig, parent=None):
         self.config = config
         self.dialog = QDialog(parent)
-        self.dialog.setWindowTitle("ki Sync Settings")
+        self.dialog.setWindowTitle("AnkiGit Settings")
         self.dialog.setMinimumWidth(550)
         self._setup_ui()
         self._load_config()

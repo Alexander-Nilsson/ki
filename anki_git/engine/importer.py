@@ -29,8 +29,8 @@ class ImportResult:
 def preview_import(repo_path: Path) -> ImportResult:
     """Analyze what would change without applying anything (dry-run)."""
     result = ImportResult()
-    from ki_addon.formats.notetype_yaml import read_all_notetypes
-    from ki_addon.formats.notes_md import parse_notes_file
+    from anki_git.formats.notetype_yaml import read_all_notetypes
+    from anki_git.formats.notes_md import parse_notes_file
 
     notetypes_dir = repo_path / "notetypes"
     decks_dir = repo_path / "decks"
@@ -69,7 +69,7 @@ def import_from_repo(col, repo_path: Path) -> ImportResult:
 
 
 def _import_notetypes(col, repo_path: Path, result: ImportResult) -> None:
-    from ki_addon.formats.notetype_yaml import read_all_notetypes, Notetype
+    from anki_git.formats.notetype_yaml import read_all_notetypes, Notetype
 
     notetypes_dir = repo_path / "notetypes"
     repo_notetypes = read_all_notetypes(notetypes_dir)
@@ -104,7 +104,7 @@ def _import_notetypes(col, repo_path: Path, result: ImportResult) -> None:
 
 
 def _import_notes(col, repo_path: Path, result: ImportResult) -> None:
-    from ki_addon.formats.notes_md import parse_notes_file
+    from anki_git.formats.notes_md import parse_notes_file
     from anki.utils import int_time
 
     decks_dir = repo_path / "decks"

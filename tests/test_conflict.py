@@ -8,7 +8,7 @@ Tests all 6 conflict cases:
   5. Deleted in Git, unchanged in Anki -> delete from Anki
   6. Deleted in both -> already gone
 """
-from ki_addon.engine.conflict import (
+from anki_git.engine.conflict import (
     detect_conflicts,
     ConflictType,
 )

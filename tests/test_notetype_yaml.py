@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 
-from ki_addon.formats.notetype_yaml import (
+from anki_git.formats.notetype_yaml import (
     Notetype,
     NotetypeField,
     NotetypeTemplate,

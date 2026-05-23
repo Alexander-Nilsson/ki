@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from ki_addon.config import KiSyncConfig
-from ki_addon.engine.exporter import export_collection, ExportResult
-from ki_addon.engine.git_ops import get_or_init_repo, get_commit_count
+from anki_git.config import KiSyncConfig
+from anki_git.engine.exporter import export_collection, ExportResult
+from anki_git.engine.git_ops import get_or_init_repo, get_commit_count
 
 _export_timer = None
 _config = None
@@ -47,19 +47,19 @@ def save_config(config: KiSyncConfig) -> None:
 
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox
-    from ki_addon.ui import SettingsDialog, ProgressDialog
+    from anki_git.ui import SettingsDialog, ProgressDialog
 
     config = load_config()
     from aqt import mw
 
     if not config.repo_path:
         QMessageBox.warning(
-            mw, "ki Sync", "Please set a repository path in Tools > ki Sync > Settings first."
+            mw, "AnkiGit", "Please set a repository path in Tools > AnkiGit > Settings first."
         )
         return
 
     if mw is None or mw.col is None:
-        QMessageBox.critical(mw, "ki Sync", "No collection is open.")
+        QMessageBox.critical(mw, "AnkiGit", "No collection is open.")
         return
 
     repo_path = Path(config.repo_path)
@@ -75,7 +75,7 @@ def snapshot_action() -> None:
         dialog.close()
 
         if result.error:
-            QMessageBox.critical(mw, "ki Sync Snapshot", f"Error: {result.error}")
+            QMessageBox.critical(mw, "AnkiGit Snapshot", f"Error: {result.error}")
             return
 
         repo = get_or_init_repo(repo_path)
@@ -86,16 +86,16 @@ def snapshot_action() -> None:
             f"Notetypes changed: {result.notetypes_changed}\n"
             f"Total commits: {commit_count}"
         )
-        QMessageBox.information(mw, "ki Sync Snapshot", msg)
+        QMessageBox.information(mw, "AnkiGit Snapshot", msg)
 
     except Exception as e:
         dialog.close()
-        QMessageBox.critical(mw, "ki Sync Snapshot", f"Snapshot failed: {e}")
+        QMessageBox.critical(mw, "AnkiGit Snapshot", f"Snapshot failed: {e}")
 
 
 def settings_action() -> None:
     from aqt import mw
-    from ki_addon.ui import SettingsDialog
+    from anki_git.ui import SettingsDialog
     config = load_config()
     dialog = SettingsDialog(config, mw)
     if dialog.exec():
@@ -116,7 +116,7 @@ def show_menu() -> None:
             break
 
     if parent_menu is None:
-        parent_menu = QMenu("ki Sync", mw)
+        parent_menu = QMenu("AnkiGit", mw)
 
     snapshot_act = QAction("Take Snapshot", mw)
     snapshot_act.triggered.connect(snapshot_action)

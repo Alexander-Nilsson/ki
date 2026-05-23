@@ -1,13 +1,13 @@
-# AGENTS.md — Ki Sync Anki Addon
+# AGENTS.md — AnkiGit Anki Addon
 
 ## Project Overview
 
-This project is transitioning from `ki` (a CLI tool that converts Anki collections to Git repos) into **ki Sync** — an Anki addon that provides Git-based version control for Anki collections directly inside the Anki UI.
+This project is transitioning from `ki` (a CLI tool that converts Anki collections to Git repos) into **AnkiGit** — an Anki addon that provides Git-based version control for Anki collections directly inside the Anki UI.
 
 ## Architecture
 
 ```
-ki_addon/
+anki_git/
 ├── __init__.py          # Anki hook registration only
 ├── addon.py             # Qt UI: menus, dialogs, settings
 ├── engine/
@@ -78,7 +78,7 @@ Japanese language
 ## MVP Priority
 
 1. **Read-only snapshot** — export collection to Git repo
-2. **Menu integration** — Tools > ki Sync > Take Snapshot
+2. **Menu integration** — Tools > AnkiGit > Take Snapshot
 3. **Notetype tracking** — clean YAML + CSS export
 4. **Manual push to remote**
 5. **Settings dialog** — repo path + snapshot button

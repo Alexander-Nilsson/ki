@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 
-from ki_addon.formats.notes_md import (
+from anki_git.formats.notes_md import (
     Note,
     parse_note_section,
     parse_notes_file,

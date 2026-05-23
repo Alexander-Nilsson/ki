@@ -2,7 +2,7 @@
 from pathlib import Path
 import tempfile
 
-from ki_addon.engine.git_ops import (
+from anki_git.engine.git_ops import (
     init_repo,
     open_repo,
     get_or_init_repo,
