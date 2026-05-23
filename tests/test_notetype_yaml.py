@@ -117,6 +117,56 @@ def test_read_all_notetypes():
         assert "Cloze" in notetypes
 
 
+def test_js_heavy_template_roundtrip():
+    """Templates with JS containing single quotes and newlines must round-trip."""
+    afmt = """{{FrontSide}}
+
+<script>
+let l = document.querySelectorAll('.prettify-tags > *');
+if (tag) { }
+</script>"""
+    nt = Notetype(
+        name="JS_Heavy",
+        id=999,
+        fields=[NotetypeField(name="Front", ord=0)],
+        templates=[
+            NotetypeTemplate(
+                name="Card 1",
+                ord=0,
+                qfmt="{{Front}}",
+                afmt=afmt,
+            ),
+        ],
+        css=".card { }",
+    )
+    lines = nt.to_yaml_lines()
+    nt2 = Notetype.from_yaml_lines(lines)
+    assert nt2.templates[0].afmt == afmt
+    assert nt2.templates[0].qfmt == "{{Front}}"
+
+
+def test_template_with_tabs_and_quotes_roundtrip():
+    """Templates with tabs (forces double-quoted YAML mode) must round-trip."""
+    afmt = "{{FrontSide}}\n\n<script>\nlet el = document.querySelectorAll(\"\t.prettify-tags > *\");\nif (el) { el.innerHTML = \"test\"; }\n</script>"
+    nt = Notetype(
+        name="Tabs_And_Quotes",
+        id=888,
+        fields=[NotetypeField(name="Front", ord=0)],
+        templates=[
+            NotetypeTemplate(
+                name="Card 1",
+                ord=0,
+                qfmt="{{Front}}",
+                afmt=afmt,
+            ),
+        ],
+        css=".card { }",
+    )
+    lines = nt.to_yaml_lines()
+    nt2 = Notetype.from_yaml_lines(lines)
+    assert nt2.templates[0].afmt == afmt
+
+
 def test_from_anki_dict():
     anki_dict = {
         "name": "Basic",

@@ -76,7 +76,10 @@ def export_collection(
     changed_notetypes = []
     for name, nt in current_notetypes.items():
         old = old_notetypes.get(name)
-        old_yaml = "\n".join(old.to_yaml_lines()) if old else ""
+        try:
+            old_yaml = "\n".join(old.to_yaml_lines()) if old else ""
+        except Exception:
+            old_yaml = ""
         new_yaml = "\n".join(nt.to_yaml_lines())
         if old_yaml != new_yaml:
             changed_notetypes.append(name)

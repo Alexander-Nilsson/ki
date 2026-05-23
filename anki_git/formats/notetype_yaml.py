@@ -1,9 +1,24 @@
 from pathlib import Path
 from typing import List, Optional
 
+import yaml
+from yaml.dumper import SafeDumper
+
 
 CSS_FILENAME_SUFFIX = ".css"
 YAML_FILENAME_SUFFIX = ".yaml"
+
+
+class _BlockScalarDumper(SafeDumper):
+    """Custom SafeDumper that uses literal block scalars (|) for multi-line strings."""
+
+    def _represent_str(self, data: str):
+        if "\n" in data:
+            return self.represent_scalar("tag:yaml.org,2002:str", data, style="|")
+        return self.represent_scalar("tag:yaml.org,2002:str", data)
+
+
+_BlockScalarDumper.add_representer(str, _BlockScalarDumper._represent_str)
 
 
 class NotetypeField:
@@ -81,8 +96,6 @@ class Notetype:
         )
 
     def to_yaml_lines(self) -> List[str]:
-        import yaml
-
         d = {
             "name": self.name,
             "id": self.id,
@@ -114,13 +127,14 @@ class Notetype:
                 t_dict["bqfmt"] = t_orig.bqfmt
             if t_orig.bafmt:
                 t_dict["bafmt"] = t_orig.bafmt
-        return yaml.safe_dump(d, allow_unicode=True, default_flow_style=False, sort_keys=False).rstrip("\n").split("\n")
+        return yaml.dump(d, Dumper=_BlockScalarDumper, allow_unicode=True, default_flow_style=False, sort_keys=False).rstrip("\n").split("\n")
 
     @classmethod
     def from_yaml_lines(cls, lines: List[str]) -> "Notetype":
-        import yaml
         text = "\n".join(lines)
         d = yaml.safe_load(text)
+        if d is None:
+            raise ValueError("Empty or invalid notetype YAML")
         fields = [
             NotetypeField(name=f["name"], ord=f.get("ord", i), font=f.get("font", "Arial"), size=f.get("size", 20), sticky=f.get("sticky", False))
             for i, f in enumerate(d.get("fields", []))
@@ -164,7 +178,10 @@ def read_notetype(yaml_path: Path) -> Optional[Notetype]:
         return None
     lines = yaml_path.read_text(encoding="utf-8").split("\n")
     css_path = yaml_path.with_suffix(CSS_FILENAME_SUFFIX)
-    nt = Notetype.from_yaml_lines(lines)
+    try:
+        nt = Notetype.from_yaml_lines(lines)
+    except yaml.YAMLError as e:
+        raise ValueError(f"Failed to parse {yaml_path}: {e}") from e
     if css_path.exists():
         nt.css = css_path.read_text(encoding="utf-8")
     return nt
@@ -175,7 +192,10 @@ def read_all_notetypes(notetypes_dir: Path) -> dict:
     if not notetypes_dir.exists():
         return result
     for yaml_file in sorted(notetypes_dir.glob(f"*{YAML_FILENAME_SUFFIX}")):
-        nt = read_notetype(yaml_file)
-        if nt:
-            result[nt.name] = nt
+        try:
+            nt = read_notetype(yaml_file)
+            if nt:
+                result[nt.name] = nt
+        except (ValueError, yaml.YAMLError):
+            continue
     return result
