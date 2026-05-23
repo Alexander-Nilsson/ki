@@ -2,7 +2,7 @@ from typing import List
 
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QGroupBox,
+    QTableWidget, QTableWidgetItem, QGroupBox, QMenu,
     QDialogButtonBox,
 )
 
@@ -13,7 +13,7 @@ class ConflictResolutionDialog(QDialog):
     def __init__(self, report: ConflictReport, parent=None):
         super().__init__(parent)
         self.report = report
-        self.resolutions: dict = {}
+        self.resolved_report = report
         self.setWindowTitle("AnkiGit — Conflict Resolution")
         self.setMinimumSize(700, 500)
         self._setup_ui()
@@ -49,6 +49,7 @@ class ConflictResolutionDialog(QDialog):
                 self._table.setItem(i, 1, QTableWidgetItem(c.conflict_type.value))
 
                 action_btn = QPushButton("Choose...", self._table)
+                action_btn.clicked.connect(lambda _, idx=i: self._show_choice_menu(idx))
                 self._table.setCellWidget(i, 2, action_btn)
 
             self._table.resizeColumnsToContents()
@@ -68,6 +69,24 @@ class ConflictResolutionDialog(QDialog):
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _show_choice_menu(self, row: int):
+        conflicts_to_show = [
+            c for c in self.report.conflicts if c.conflict_type in (ConflictType.CONFLICT,)
+        ]
+        c = conflicts_to_show[row]
+        menu = QMenu(self)
+        anki_action = menu.addAction("Keep Anki Version")
+        git_action = menu.addAction("Keep Git Version")
+        chosen = menu.exec(self._table.cellWidget(row, 2).mapToGlobal(self._table.cellWidget(row, 2).rect().center()))
+        if chosen == anki_action:
+            c.resolution = "anki"
+            c.resolved = True
+            self._table.cellWidget(row, 2).setText("Anki")
+        elif chosen == git_action:
+            c.resolution = "git"
+            c.resolved = True
+            self._table.cellWidget(row, 2).setText("Git")
 
     def _resolve_all(self, choice: str):
         for c in self.report.conflicts:

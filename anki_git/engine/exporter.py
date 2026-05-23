@@ -19,6 +19,7 @@ from anki_git.formats.notetype_yaml import (
     read_all_notetypes,
 )
 from anki_git.formats.notes_md import Note, write_note_file
+from anki_git.formats.media import handle_media, get_media_filenames_from_fields, MediaStrategy
 
 
 NOTETYPES_DIR = "notetypes"
@@ -47,6 +48,7 @@ def export_collection(
     repo_path: Path,
     remote_url: str = "",
     progress_callback: callable = None,
+    media_strategy: str = "none",
 ) -> ExportResult:
     result = ExportResult()
 
@@ -92,6 +94,7 @@ def export_collection(
     notes_by_deck: Dict[str, List[Note]] = {}
     note_checksums: Dict[str, str] = {}
     notes_changed = 0
+    media_filenames: set = set()
 
     for i, nid in enumerate(nids):
         if progress_callback and i % 100 == 0:
@@ -136,8 +139,19 @@ def export_collection(
         note_dir = decks_dir.joinpath(*deck_path_parts)
         write_note_file(note_dir, note)
 
+        for field_value in fields.values():
+            media_filenames.update(get_media_filenames_from_fields(field_value))
+
     if progress_callback:
         progress_callback("Writing note files...")
+
+    if media_strategy != "none" and media_filenames:
+        if progress_callback:
+            progress_callback("Handling media files...")
+        col_media_dir = Path(col.media.dir()) if hasattr(col, "media") else col.path.parent / "collection.media"
+        repo_media_dir = repo_path / "media"
+        strategy = MediaStrategy(media_strategy)
+        handle_media(col_media_dir, repo_media_dir, strategy, media_filenames)
 
     result.notes_changed = notes_changed
     result.notetypes_changed = len(changed_notetypes)

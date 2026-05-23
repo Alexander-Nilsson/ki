@@ -32,8 +32,9 @@ def handle_media(
         if strategy == MediaStrategy.SYMLINK:
             try:
                 dst.symlink_to(src.resolve())
-            except OSError:
-                pass
+            except OSError as e:
+                import logging
+                logging.getLogger("anki_git").warning("Failed to symlink media %s: %s", fname, e)
         elif strategy == MediaStrategy.COPY:
             dst.write_bytes(src.read_bytes())
         elif strategy == MediaStrategy.GIT_LFS:

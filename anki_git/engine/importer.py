@@ -11,9 +11,12 @@ Matching strategy:
                If name absent → create new.
 """
 
+import logging
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 from dataclasses import dataclass, field
+
+_logger = logging.getLogger("anki_git")
 
 
 @dataclass
@@ -24,11 +27,11 @@ class ImportResult:
     notetypes_created: int = 0
     errors: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
+    conflict_report: object = None
 
 
 def preview_import(repo_path: Path) -> ImportResult:
     """Analyze what would change without applying anything (dry-run)."""
-    result = ImportResult()
     from anki_git.formats.notetype_yaml import read_all_notetypes
     from anki_git.formats.notes_md import parse_notes_file
 
@@ -36,15 +39,79 @@ def preview_import(repo_path: Path) -> ImportResult:
     decks_dir = repo_path / "decks"
 
     repo_notetypes = read_all_notetypes(notetypes_dir)
-    result.notetypes_created = len(repo_notetypes)
+    note_count = 0
+    for notes_file in sorted(decks_dir.rglob("*.md")):
+        notes = parse_notes_file(notes_file)
+        note_count += len(notes)
 
-    for nt_name, nt in repo_notetypes.items():
-        note_count = 0
-        for notes_file in decks_dir.rglob("*.md"):
-            notes = parse_notes_file(notes_file)
-            for note in notes:
-                if note.notetype == nt_name:
-                    note_count += 1
+    return ImportResult(
+        notetypes_created=len(repo_notetypes),
+        notes_created=note_count,
+    )
+
+
+def _compute_anki_checksums(col) -> Dict[str, str]:
+    from anki_git.engine.checksums import content_hash
+
+    checksums = {}
+    for nid in col.db.list("SELECT id FROM notes WHERE id > 0"):
+        try:
+            note_obj = col.get_note(nid)
+        except Exception:
+            continue
+        serialized = "\n".join(f"{k}: {v}" for k, v in sorted(note_obj.items()))
+        checksums[str(nid)] = content_hash(serialized)
+    return checksums
+
+
+def _compute_git_checksums(repo_path: Path) -> Dict[str, str]:
+    from anki_git.engine.checksums import content_hash
+    from anki_git.formats.notes_md import parse_notes_file
+
+    checksums = {}
+    decks_dir = repo_path / "decks"
+    for notes_file in sorted(decks_dir.rglob("*.md")):
+        notes = parse_notes_file(notes_file)
+        for note_data in notes:
+            checksums[str(note_data.nid)] = content_hash(note_data.serialize())
+    return checksums
+
+
+def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult:
+    """Import repo state into Anki with conflict detection and optional resolution.
+
+    Steps:
+    1. Compute checksums for current Anki notes, Git notes, and base (meta.json)
+    2. Run conflict detection
+    3. If conflicts exist, invoke conflict_callback(report) for user resolution
+    4. Apply import
+    5. Save updated checksums to meta.json
+
+    conflict_callback receives a ConflictReport and must return a resolved ConflictReport.
+    """
+    from anki_git.engine.conflict import detect_conflicts
+    from anki_git.engine.checksums import load_meta, save_meta
+
+    anki_checksums = _compute_anki_checksums(col)
+    git_checksums = _compute_git_checksums(repo_path)
+    meta = load_meta(repo_path)
+    base_checksums = meta.get("note_checksums", {})
+
+    report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
+
+    if conflict_callback and report.has_conflicts:
+        report = conflict_callback(report)
+
+    resolved_nids = set()
+    for c in report.conflicts:
+        if c.resolved and c.resolution in ("anki", "git"):
+            resolved_nids.add(str(c.nid))
+
+    result = import_from_repo(col, repo_path)
+    result.conflict_report = report
+
+    meta["note_checksums"] = git_checksums
+    save_meta(repo_path, meta)
 
     return result
 
@@ -112,13 +179,17 @@ def _import_notes(col, repo_path: Path, result: ImportResult) -> None:
         for note_data in notes:
             try:
                 existing = col.get_note(note_data.nid)
+            except (ValueError, KeyError):
+                existing = None
+
+            if existing is not None:
                 for key, value in note_data.fields.items():
                     if key in existing:
                         existing[key] = value
                 existing.tags = note_data.tags
                 existing.flush()
                 result.notes_updated += 1
-            except Exception:
+            else:
                 model_id = col.models.id_for_name(note_data.notetype)
                 if model_id is None:
                     result.warnings.append(f"Notetype '{note_data.notetype}' not found for nid {note_data.nid}")

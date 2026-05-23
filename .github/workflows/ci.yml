@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request:
-    branches: [master]
+    branches: [main]
 
 permissions:
   contents: write
@@ -89,10 +89,10 @@ jobs:
       - name: Build
         run: .venv/bin/python build.py all
 
-      # --- RELEASE SECTION (only on master push) ---
+      # --- RELEASE SECTION (only on main push) ---
 
       - name: Bump Version, Build, Commit, and Tag
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: build_step
         run: |
           NEW_VERSION=$(.venv/bin/python -c "
@@ -128,13 +128,13 @@ jobs:
           git commit -m "Bump version to $NEW_VERSION [skip ci]"
           git tag -d "v$NEW_VERSION" 2>/dev/null || true
           git tag "v$NEW_VERSION"
-          git push origin master +"refs/tags/v$NEW_VERSION"
+          git push origin main +"refs/tags/v$NEW_VERSION"
 
           echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Create Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.build_step.outputs.tag }}
