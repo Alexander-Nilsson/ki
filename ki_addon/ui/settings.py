@@ -5,44 +5,43 @@ from aqt.qt import (
     QPushButton, QCheckBox, QComboBox, QSpinBox, QDialogButtonBox,
     QFileDialog, QFormLayout, QGroupBox,
 )
-from aqt import mw
 
 from ki_addon.config import KiSyncConfig
 
 
-class SettingsDialog(QDialog):
+class SettingsDialog:
     def __init__(self, config: KiSyncConfig, parent=None):
-        super().__init__(parent)
         self.config = config
-        self.setWindowTitle("ki Sync Settings")
-        self.setMinimumWidth(550)
+        self.dialog = QDialog(parent)
+        self.dialog.setWindowTitle("ki Sync Settings")
+        self.dialog.setMinimumWidth(550)
         self._setup_ui()
         self._load_config()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        layout = QVBoxLayout(self.dialog)
 
-        repo_group = QGroupBox("Repository", self)
+        repo_group = QGroupBox("Repository", self.dialog)
         repo_layout = QFormLayout(repo_group)
         repo_path_layout = QHBoxLayout()
-        self._repo_path_input = QLineEdit(self)
+        self._repo_path_input = QLineEdit(self.dialog)
         self._repo_path_input.setPlaceholderText("/path/to/anki-repo")
-        browse_btn = QPushButton("Browse...", self)
+        browse_btn = QPushButton("Browse...", self.dialog)
         browse_btn.clicked.connect(self._browse_repo)
         repo_path_layout.addWidget(self._repo_path_input)
         repo_path_layout.addWidget(browse_btn)
         repo_layout.addRow("Repo path:", repo_path_layout)
         layout.addWidget(repo_group)
 
-        sync_group = QGroupBox("Sync Behavior", self)
+        sync_group = QGroupBox("Sync Behavior", self.dialog)
         sync_layout = QFormLayout(sync_group)
-        self._auto_startup_cb = QCheckBox("Auto-sync on startup", self)
+        self._auto_startup_cb = QCheckBox("Auto-sync on startup", self.dialog)
         sync_layout.addRow(self._auto_startup_cb)
-        self._auto_close_cb = QCheckBox("Auto-snapshot on close", self)
+        self._auto_close_cb = QCheckBox("Auto-snapshot on close", self.dialog)
         sync_layout.addRow(self._auto_close_cb)
 
         debounce_layout = QHBoxLayout()
-        self._debounce_input = QSpinBox(self)
+        self._debounce_input = QSpinBox(self.dialog)
         self._debounce_input.setRange(500, 10000)
         self._debounce_input.setSingleStep(500)
         self._debounce_input.setSuffix(" ms")
@@ -50,26 +49,26 @@ class SettingsDialog(QDialog):
         sync_layout.addRow("Debounce delay:", debounce_layout)
         layout.addWidget(sync_group)
 
-        media_group = QGroupBox("Media", self)
+        media_group = QGroupBox("Media", self.dialog)
         media_layout = QFormLayout(media_group)
-        self._media_strategy_combo = QComboBox(self)
+        self._media_strategy_combo = QComboBox(self.dialog)
         self._media_strategy_combo.addItems(["none", "symlink", "copy", "git-lfs"])
         media_layout.addRow("Media strategy:", self._media_strategy_combo)
 
-        self._remote_url_input = QLineEdit(self)
+        self._remote_url_input = QLineEdit(self.dialog)
         self._remote_url_input.setPlaceholderText("https://github.com/user/repo.git")
         media_layout.addRow("Remote URL:", self._remote_url_input)
 
-        self._auto_push_cb = QCheckBox("Auto-push after snapshot", self)
+        self._auto_push_cb = QCheckBox("Auto-push after snapshot", self.dialog)
         media_layout.addRow(self._auto_push_cb)
         layout.addWidget(media_group)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
-            self,
+            self.dialog,
         )
         buttons.accepted.connect(self._save_and_accept)
-        buttons.rejected.connect(self.reject)
+        buttons.rejected.connect(self.dialog.reject)
         layout.addWidget(buttons)
 
     def _load_config(self):
@@ -91,9 +90,12 @@ class SettingsDialog(QDialog):
         self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.remote_url = self._remote_url_input.text().strip()
         self.config.auto_push_after_snapshot = self._auto_push_cb.isChecked()
-        self.accept()
+        self.dialog.accept()
 
     def _browse_repo(self):
-        path = QFileDialog.getExistingDirectory(self, "Select Git Repository Path")
+        path = QFileDialog.getExistingDirectory(self.dialog, "Select Git Repository Path")
         if path:
             self._repo_path_input.setText(path)
+
+    def exec(self):
+        return self.dialog.exec()

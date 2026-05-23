@@ -4,8 +4,8 @@ from typing import Dict, List, Optional
 
 
 HEADER_PATTERN = re.compile(
-    r"<!--\s*note:\s*nid=(?P<nid>\d+)\s+notetype=(?P<notetype>[^\s]+)"
-    r"(?:\s+tags=(?P<tags>[^\s]+))?"
+    r"<!--\s*note:\s*nid=(?P<nid>\d+)\s+notetype=(?P<notetype>\S+)"
+    r"(?:\s+tags=(?P<tags>\S*))?"
     r"(?:\s+deck=(?P<deck>.+?))?\s*-->"
 )
 

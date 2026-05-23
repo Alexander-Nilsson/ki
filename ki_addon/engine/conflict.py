@@ -7,12 +7,13 @@ Compare three states:
   - remote: Git repo state
 
 Conflict cases:
-  1. Changed in Anki AND changed in Git → conflict (ask user)
-  2. Changed only in Anki → Anki wins (push direction)
-  3. Changed only in Git → Git wins (pull direction)
-  4. Deleted in Anki, unchanged in Git → delete from Git
-  5. Deleted in Git, unchanged in Anki → delete from Anki (with confirmation)
-  6. Deleted in both → already gone
+  1. Changed in both (differently) -> conflict (ask user)
+  2. Changed only in Anki -> Anki wins (push direction)
+  3. Changed only in Git -> Git wins (pull direction)
+  4. Deleted in Anki, same in Git -> delete from Git
+  5. Deleted in Git, same in Anki -> delete from Anki (with confirmation)
+  6. Deleted in both -> already gone
+  7. Deleted in one, changed in other -> conflict
 """
 
 from enum import Enum
@@ -67,26 +68,25 @@ def detect_conflicts(
         anki = anki_checksums.get(nid_str)
         git = git_checksums.get(nid_str)
 
-        anki_changed = base is not None and anki is not None and base != anki
-        git_changed = base is not None and git is not None and base != git
-
         if anki is None and git is None:
             report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ALREADY_GONE))
         elif anki is None:
-            if git_changed:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_ANKI))
-            else:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ALREADY_GONE))
-        elif git is None:
-            if anki_changed:
+            if git == base:
                 report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_GIT))
             else:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ALREADY_GONE))
-        elif anki_changed and git_changed:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
-        elif anki_changed:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ANKI_WINS))
-        elif git_changed:
+                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
+        elif git is None:
+            if anki == base:
+                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_ANKI))
+            else:
+                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
+        elif anki == git:
+            pass
+        elif anki == base and git != base:
             report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.GIT_WINS))
+        elif git == base and anki != base:
+            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ANKI_WINS))
+        else:
+            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
 
     return report

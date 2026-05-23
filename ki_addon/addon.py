@@ -2,31 +2,32 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from aqt import mw, gui_hooks
-from aqt.qt import (
-    QAction, QMenu, QMessageBox, QTimer,
-)
-from anki.collection import Collection
-
 from ki_addon.config import KiSyncConfig
 from ki_addon.engine.exporter import export_collection, ExportResult
 from ki_addon.engine.git_ops import get_or_init_repo, get_commit_count
-from ki_addon.ui.settings import SettingsDialog
-from ki_addon.ui.progress import ProgressDialog
 
-_export_timer: Optional[QTimer] = None
-_config: Optional[KiSyncConfig] = None
+_export_timer = None
+_config = None
+
+
+def _import(name):
+    import importlib
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        return None
 
 
 def load_config() -> KiSyncConfig:
     global _config
     if _config is not None:
         return _config
-    if mw is None:
+    aqt = _import("aqt")
+    if aqt is None:
         _config = KiSyncConfig()
         return _config
     try:
-        raw = mw.addonManager.getConfig(__name__.split(".")[0])
+        raw = aqt.mw.addonManager.getConfig(__name__.split(".")[0])
         _config = KiSyncConfig.from_dict(raw) if raw else KiSyncConfig()
     except Exception:
         _config = KiSyncConfig()
@@ -36,15 +37,21 @@ def load_config() -> KiSyncConfig:
 def save_config(config: KiSyncConfig) -> None:
     global _config
     _config = config
-    if mw is not None:
+    aqt = _import("aqt")
+    if aqt is not None:
         try:
-            mw.addonManager.writeConfig(__name__.split(".")[0], config.to_dict())
+            aqt.mw.addonManager.writeConfig(__name__.split(".")[0], config.to_dict())
         except Exception:
             pass
 
 
 def snapshot_action() -> None:
+    from aqt.qt import QMessageBox
+    from ki_addon.ui import SettingsDialog, ProgressDialog
+
     config = load_config()
+    from aqt import mw
+
     if not config.repo_path:
         QMessageBox.warning(
             mw, "ki Sync", "Please set a repository path in Tools > ki Sync > Settings first."
@@ -56,14 +63,14 @@ def snapshot_action() -> None:
         return
 
     repo_path = Path(config.repo_path)
-
     dialog = ProgressDialog("Taking Snapshot...", mw)
     dialog.set_text("Exporting collection to Git repo...")
     dialog.show()
 
     try:
         result = export_collection(
-            mw.col, repo_path, remote_url=config.remote_url if config.auto_push_after_snapshot else ""
+            mw.col, repo_path,
+            remote_url=config.remote_url if config.auto_push_after_snapshot else ""
         )
         dialog.close()
 
@@ -87,6 +94,8 @@ def snapshot_action() -> None:
 
 
 def settings_action() -> None:
+    from aqt import mw
+    from ki_addon.ui import SettingsDialog
     config = load_config()
     dialog = SettingsDialog(config, mw)
     if dialog.exec():
@@ -94,6 +103,9 @@ def settings_action() -> None:
 
 
 def show_menu() -> None:
+    from aqt import mw
+    from aqt.qt import QAction, QMenu
+
     if mw is None:
         return
 
@@ -128,6 +140,7 @@ def on_profile_close() -> None:
     config = load_config()
     if config.auto_snapshot_on_close and config.repo_path:
         try:
+            from aqt import mw
             if mw is not None and mw.col is not None:
                 repo_path = Path(config.repo_path)
                 export_collection(mw.col, repo_path)
@@ -137,6 +150,8 @@ def on_profile_close() -> None:
 
 def on_note_change(note) -> None:
     global _export_timer
+    from aqt.qt import QTimer
+
     config = load_config()
     if not config.repo_path:
         return
@@ -150,6 +165,7 @@ def on_note_change(note) -> None:
 
 def _debounced_export() -> None:
     config = load_config()
+    from aqt import mw
     if mw is None or mw.col is None or not config.repo_path:
         return
     try:
@@ -160,6 +176,7 @@ def _debounced_export() -> None:
 
 
 def init_addon() -> None:
+    from aqt import gui_hooks
     show_menu()
     gui_hooks.profile_did_open.append(on_profile_open)
     gui_hooks.profile_will_close.append(on_profile_close)

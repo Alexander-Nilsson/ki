@@ -1,6 +1,7 @@
 import datetime
 from pathlib import Path
 from typing import Optional
+from datetime import timezone
 
 from git import Repo, GitCommandError
 
@@ -42,7 +43,7 @@ def create_snapshot_commit(
 ) -> None:
     deck_lines = ", ".join(f"{d} ({n} notes)" for d, n in changed_decks.items())
     nt_lines = ", ".join(changed_notetypes)
-    timestamp = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     message = (
         f"snapshot: {notes_changed} notes changed, {notetypes_changed} notetypes updated\n"
         f"\n"
@@ -68,7 +69,7 @@ def push_to_remote(repo: Repo, remote_url: str) -> None:
 
 
 def is_dirty(repo: Repo) -> bool:
-    return repo.is_dirty()
+    return repo.is_dirty() or bool(repo.untracked_files)
 
 
 def get_commit_count(repo: Repo) -> int:

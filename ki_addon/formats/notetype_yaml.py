@@ -118,12 +118,13 @@ class Notetype:
             NotetypeTemplate(name=t["name"], ord=t.get("ord", i), qfmt=t.get("qfmt", ""), afmt=t.get("afmt", ""))
             for i, t in enumerate(d.get("templates", []))
         ]
+        css = d.get("css", "").rstrip("\n")
         return cls(
             name=d["name"],
             id=d.get("id", 0),
             fields=fields,
             templates=templates,
-            css=d.get("css", ""),
+            css=css,
             sort_field=d.get("sort_field", 0),
             type=d.get("type", 0),
         )
