@@ -1,0 +1,10 @@
+{
+    "repo_path": "",
+    "auto_sync_on_startup": false,
+    "auto_snapshot_on_close": false,
+    "debounce_delay_ms": 2000,
+    "media_strategy": "none",
+    "remote_url": "",
+    "auto_push_after_snapshot": false,
+    "log_level": "INFO"
+}
