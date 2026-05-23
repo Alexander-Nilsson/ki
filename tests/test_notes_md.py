@@ -6,7 +6,6 @@ from anki_git.formats.notes_md import (
     Note,
     parse_note_section,
     parse_notes_file,
-    serialize_notes,
     write_notes_file,
 )
 
@@ -18,19 +17,6 @@ SINGLE_NOTE = """\
 
 ## Back
 Japanese language
-"""
-
-TWO_NOTES = """\
-<!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->
-## Front
-日本語
-
-## Back
-Japanese language
-
-<!-- note: nid=9876543210 notetype=Cloze tags=math deck=Math::Calculus -->
-## Text
-The derivative of {{c1::sin(x)}} is {{c2::cos(x)}}
 """
 
 NOTE_WITH_EMPTY_FIELD = """\
@@ -55,8 +41,6 @@ def test_parse_single_note():
 
 
 def test_parse_two_notes():
-    text = TWO_NOTES
-    sections = text.strip().split("\n\n")
     # Rejoin to simulate the file
     note1 = parse_note_section(
         "<!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->\n## Front\n日本語\n\n## Back\nJapanese language"

@@ -3,12 +3,10 @@
 These verify the addon loads without errors against the real anki runtime.
 Follows the pattern from Anki-Dictionary-Addon's test_addon_loads.py.
 """
-from pathlib import Path
-
 import pytest
 
 try:
-    from anki.collection import Collection
+    import anki  # noqa: F401
 
     _anki_available = True
 except ImportError:

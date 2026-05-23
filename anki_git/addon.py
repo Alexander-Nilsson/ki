@@ -1,9 +1,7 @@
-import os
 from pathlib import Path
-from typing import Optional
 
 from anki_git.config import KiSyncConfig
-from anki_git.engine.exporter import export_collection, ExportResult
+from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_or_init_repo, get_commit_count
 
 _export_timer = None
@@ -47,7 +45,7 @@ def save_config(config: KiSyncConfig) -> None:
 
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox, QApplication
-    from anki_git.ui import SettingsDialog, ProgressDialog
+    from anki_git.ui import ProgressDialog
 
     config = load_config()
     from aqt import mw

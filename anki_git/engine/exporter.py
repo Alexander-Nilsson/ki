@@ -1,11 +1,10 @@
 import datetime
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 from anki.collection import Collection
-from anki.models import NotetypeDict
 
-from anki_git.engine.checksums import notes_hash, load_meta, save_meta
+from anki_git.engine.checksums import load_meta, save_meta
 from anki_git.engine.git_ops import (
     get_or_init_repo,
     stage_all,
@@ -59,7 +58,6 @@ def export_collection(
     if progress_callback:
         progress_callback("Loading metadata...")
     meta = load_meta(repo_path)
-    last_export_time = meta.get("last_export_time", 0)
 
     notetypes_dir = repo_path / NOTETYPES_DIR
     decks_dir = repo_path / DECKS_DIR

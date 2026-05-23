@@ -2,7 +2,7 @@ from typing import List
 
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QHeaderView, QGroupBox,
+    QTableWidget, QTableWidgetItem, QGroupBox,
     QDialogButtonBox,
 )
 

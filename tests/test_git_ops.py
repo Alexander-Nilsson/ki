@@ -1,6 +1,5 @@
 """Tests for git operations."""
 from pathlib import Path
-import tempfile
 
 from anki_git.engine.git_ops import (
     init_repo,
@@ -33,13 +32,13 @@ def test_open_repo_finds_existing(tmp_path):
 
 
 def test_get_or_init_repo_creates(tmp_path):
-    repo = get_or_init_repo(tmp_path)
+    get_or_init_repo(tmp_path)
     assert (tmp_path / ".git").exists()
 
 
 def test_get_or_init_repo_reuses(tmp_path):
     init_repo(tmp_path)
-    repo = get_or_init_repo(tmp_path)
+    get_or_init_repo(tmp_path)
     assert (tmp_path / ".git").exists()
 
 

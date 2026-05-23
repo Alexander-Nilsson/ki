@@ -1,7 +1,5 @@
-from pathlib import Path
-
 from aqt.qt import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QCheckBox, QComboBox, QSpinBox, QDialogButtonBox,
     QFileDialog, QFormLayout, QGroupBox,
 )
