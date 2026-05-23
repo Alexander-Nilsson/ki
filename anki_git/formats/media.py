@@ -1,3 +1,4 @@
+import re
 from enum import Enum
 from pathlib import Path
 from typing import Set
@@ -8,6 +9,9 @@ class MediaStrategy(Enum):
     SYMLINK = "symlink"
     COPY = "copy"
     GIT_LFS = "git-lfs"
+
+
+_MEDIA_PATTERN = re.compile(r'\[sound:(.*?)\]|<img[^>]*src="([^"]*)"')
 
 
 def handle_media(
@@ -42,10 +46,8 @@ def handle_media(
 
 
 def get_media_filenames_from_fields(fields: str) -> Set[str]:
-    import re
-    pattern = re.compile(r'\[sound:(.*?)\]|<img[^>]*src="([^"]*)"')
     names = set()
-    for match in pattern.finditer(fields):
+    for match in _MEDIA_PATTERN.finditer(fields):
         if match.group(1):
             names.add(match.group(1))
         if match.group(2):

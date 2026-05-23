@@ -129,3 +129,110 @@ def test_parse_nonexistent_file():
 def test_missing_header_returns_none():
     result = parse_note_section("## Front\nHello\n\n## Back\nWorld")
     assert result is None
+
+
+def test_parse_invalid_nid_non_digit():
+    """Non-digit nid doesn't match HEADER_PATTERN (which requires digits only)."""
+    text = "<!-- note: nid=abc notetype=Basic tags=tag1 deck=Default -->\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_invalid_nid_negative():
+    """Negative nid doesn't match HEADER_PATTERN either."""
+    text = "<!-- note: nid=-123 notetype=Basic tags=tag1 deck=Default -->\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_missing_notetype():
+    """Header missing notetype is rejected."""
+    text = "<!-- note: nid=123 tags=tag1 deck=Default -->\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_missing_nid():
+    """Header missing nid is rejected."""
+    text = "<!-- note: notetype=Basic tags=tag1 deck=Default -->\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_unclosed_comment():
+    """Unclosed HTML comment returns None."""
+    text = "<!-- note: nid=123 notetype=Basic tags=tag1 deck=Default\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_single_hash_heading_treated_as_content():
+    """Single # heading is not a field separator; content before any ## heading is discarded."""
+    text = "<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n# Front\nHello\n## Back\nWorld"
+    note = parse_note_section(text)
+    assert note is not None
+    # "# Front\nHello" appears before the first ## heading, so it is discarded
+    assert note.fields == {"Back": "World"}
+
+
+def test_parse_content_before_header():
+    """Text before the header comment makes the first line not match, returning None."""
+    text = "garbage\n<!-- note: nid=123 notetype=Basic tags= deck=Default -->\n## Front\nHello"
+    assert parse_note_section(text) is None
+
+
+def test_parse_duplicate_field_names():
+    """When duplicate field names appear, the last occurrence wins."""
+    text = "<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n## Front\nFirst\n## Front\nSecond"
+    note = parse_note_section(text)
+    assert note is not None
+    assert note.fields["Front"] == "Second"
+
+
+def test_parse_tags_with_trailing_colon():
+    """Tags like 'foo::bar::' produce an empty trailing tag component."""
+    text = "<!-- note: nid=1 notetype=Basic tags=foo::bar:: deck=Default -->\n## Front\nHello"
+    note = parse_note_section(text)
+    assert note is not None
+    assert note.tags == ["foo", "bar", ""]
+
+
+def test_parse_whitespace_only_field():
+    """A field containing only whitespace should be stripped to empty."""
+    text = "<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n## Front\n   \n## Back\nHello"
+    note = parse_note_section(text)
+    assert note is not None
+    assert note.fields["Front"] == ""
+    assert note.fields["Back"] == "Hello"
+
+
+def test_parse_file_skips_invalid_notes():
+    """parse_notes_file silently skips sections that don't parse as valid notes."""
+    content = (
+        '<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n## Front\nValid\n'
+        '\n'
+        'this is not a valid note header\n'
+        '\n'
+        '<!-- note: nid=2 notetype=Basic tags= deck=Default -->\n## Front\nAlso valid'
+    )
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "notes.md"
+        path.write_text(content, encoding="utf-8")
+        notes = parse_notes_file(path)
+        assert len(notes) == 2
+        assert notes[0].nid == 1
+        assert notes[1].nid == 2
+
+
+def test_parse_file_fully_malformed():
+    """A file with no valid note headers returns an empty list."""
+    content = "# Just a heading\n\nSome random text\n\n## Another heading"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = Path(tmpdir) / "notes.md"
+        path.write_text(content, encoding="utf-8")
+        notes = parse_notes_file(path)
+        assert notes == []
+
+
+def test_parse_field_with_extra_newlines():
+    """Extra blank lines inside a field are preserved as content."""
+    text = "<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n## Front\nLine1\n\nLine3\n## Back\nEnd"
+    note = parse_note_section(text)
+    assert note is not None
+    assert note.fields["Front"] == "Line1\n\nLine3"
+    assert note.fields["Back"] == "End"

@@ -1,26 +1,29 @@
 import datetime
+import logging
+import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Set
 
 from anki.collection import Collection
 
-from anki_git.engine.checksums import load_meta, save_meta
+from anki_git.engine.checksums import content_hash, load_meta, save_meta
 from anki_git.engine.git_ops import (
     get_or_init_repo,
-    stage_all,
+    stage_files,
     ensure_gitignore,
     create_snapshot_commit,
     push_to_remote,
-    is_dirty,
 )
 from anki_git.formats.notetype_yaml import (
     Notetype,
     write_notetype,
     read_all_notetypes,
+    notetype_paths,
 )
 from anki_git.formats.notes_md import Note, write_note_file
 from anki_git.formats.media import handle_media, get_media_filenames_from_fields, MediaStrategy
 
+_logger = logging.getLogger("anki_git")
 
 NOTETYPES_DIR = "notetypes"
 DECKS_DIR = "decks"
@@ -35,12 +38,14 @@ class ExportResult:
         changed_decks: Dict[str, int] = None,
         changed_notetypes: List[str] = None,
         error: str = "",
+        duration_seconds: float = 0.0,
     ):
         self.notes_changed = notes_changed
         self.notetypes_changed = notetypes_changed
         self.changed_decks = changed_decks or {}
         self.changed_notetypes = changed_notetypes or []
         self.error = error
+        self.duration_seconds = duration_seconds
 
 
 def export_collection(
@@ -50,6 +55,7 @@ def export_collection(
     progress_callback: callable = None,
     media_strategy: str = "none",
 ) -> ExportResult:
+    _start = time.perf_counter()
     result = ExportResult()
 
     if progress_callback:
@@ -73,7 +79,8 @@ def export_collection(
         nt = Notetype.from_anki_dict(nt_dict)
         current_notetypes[nt.name] = nt
 
-    changed_notetypes = []
+    changed_notetypes: List[str] = []
+    changed_files: Set[str] = set()
     for name, nt in current_notetypes.items():
         old = old_notetypes.get(name)
         try:
@@ -84,6 +91,10 @@ def export_collection(
         if old_yaml != new_yaml:
             changed_notetypes.append(name)
             write_notetype(notetypes_dir, nt)
+            yaml_path, css_path = notetype_paths(notetypes_dir, name)
+            changed_files.add(str(yaml_path.relative_to(repo_path)))
+            if nt.css or css_path.exists():
+                changed_files.add(str(css_path.relative_to(repo_path)))
 
     meta_checksums = meta.get("note_checksums", {})
 
@@ -95,6 +106,7 @@ def export_collection(
     note_checksums: Dict[str, str] = {}
     notes_changed = 0
     media_filenames: set = set()
+    _nt_name_cache: Dict[int, str] = {}
 
     for i, nid in enumerate(nids):
         if progress_callback and i % 100 == 0:
@@ -103,7 +115,10 @@ def export_collection(
             note_obj = col.get_note(nid)
         except Exception:
             continue
-        nt_name = note_obj.note_type()["name"]
+        mid = note_obj.mid
+        if mid not in _nt_name_cache:
+            _nt_name_cache[mid] = note_obj.note_type()["name"]
+        nt_name = _nt_name_cache[mid]
         try:
             cards = note_obj.cards()
             if not cards:
@@ -124,26 +139,24 @@ def export_collection(
         )
 
         serialized = note.serialize()
-        checksum = str(hash(serialized))
+        checksum = content_hash(serialized)
         note_checksums[str(nid)] = checksum
 
         old_checksum = meta_checksums.get(str(nid))
         if old_checksum != checksum:
             notes_changed += 1
+            deck_path_parts = deck_name.split("::")
+            note_dir = decks_dir.joinpath(*deck_path_parts)
+            note_path = write_note_file(note_dir, note, content=serialized)
+            changed_files.add(str(note_path.relative_to(repo_path)))
 
         if deck_name not in notes_by_deck:
             notes_by_deck[deck_name] = []
         notes_by_deck[deck_name].append(note)
 
-        deck_path_parts = deck_name.split("::")
-        note_dir = decks_dir.joinpath(*deck_path_parts)
-        write_note_file(note_dir, note)
-
-        for field_value in fields.values():
-            media_filenames.update(get_media_filenames_from_fields(field_value))
-
-    if progress_callback:
-        progress_callback("Writing note files...")
+        if media_strategy != "none":
+            for field_value in fields.values():
+                media_filenames.update(get_media_filenames_from_fields(field_value))
 
     if media_strategy != "none" and media_filenames:
         if progress_callback:
@@ -166,20 +179,31 @@ def export_collection(
         meta["collection_path"] = str(col.path)
         save_meta(repo_path, meta)
 
-        stage_all(repo)
-        if is_dirty(repo):
-            create_snapshot_commit(
-                repo,
-                notes_changed=notes_changed,
-                notetypes_changed=result.notetypes_changed,
-                changed_decks=result.changed_decks,
-                changed_notetypes=changed_notetypes,
-                collection_path=str(col.path),
-            )
+        changed_files.add(str((repo_path / META_DIR / "meta.json").relative_to(repo_path)))
+
+        stage_files(repo, list(changed_files))
+        create_snapshot_commit(
+            repo,
+            notes_changed=notes_changed,
+            notetypes_changed=result.notetypes_changed,
+            changed_decks=result.changed_decks,
+            changed_notetypes=changed_notetypes,
+            collection_path=str(col.path),
+        )
 
         if remote_url:
             if progress_callback:
                 progress_callback("Pushing to remote...")
             push_to_remote(repo, remote_url)
+
+    result.duration_seconds = time.perf_counter() - _start
+    _logger.info(
+        "Snapshot took %.2fs: %d notes changed, %d notetypes changed",
+        result.duration_seconds,
+        notes_changed,
+        result.notetypes_changed,
+    )
+    if progress_callback:
+        progress_callback(f"Snapshot complete ({result.duration_seconds:.1f}s)")
 
     return result

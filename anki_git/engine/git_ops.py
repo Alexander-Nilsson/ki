@@ -29,6 +29,13 @@ def stage_all(repo: Repo) -> None:
     repo.git.add(all=True)
 
 
+def stage_files(repo: Repo, paths: list[str]) -> None:
+    """Stage specific file paths relative to the repo root."""
+    if not paths:
+        return
+    repo.index.add(paths)
+
+
 def commit(repo: Repo, message: str) -> None:
     repo.index.commit(message)
 
