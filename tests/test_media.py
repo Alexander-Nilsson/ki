@@ -1,6 +1,4 @@
 """Tests for media file handling."""
-from pathlib import Path
-
 from anki_git.formats.media import (
     MediaStrategy,
     handle_media,

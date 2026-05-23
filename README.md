@@ -75,4 +75,4 @@ python3 -m pytest tests/                     # all tests (needs anki/aqt)
 
 ## License
 
-GPL — derived from [ki](https://github.com/langfield/ki).
+AGPL-3.0 — derived from [ki](https://github.com/langfield/ki).
