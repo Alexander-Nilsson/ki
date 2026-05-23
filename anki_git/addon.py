@@ -46,7 +46,7 @@ def save_config(config: KiSyncConfig) -> None:
 
 
 def snapshot_action() -> None:
-    from aqt.qt import QMessageBox
+    from aqt.qt import QMessageBox, QApplication
     from anki_git.ui import SettingsDialog, ProgressDialog
 
     config = load_config()
@@ -66,11 +66,17 @@ def snapshot_action() -> None:
     dialog = ProgressDialog("Taking Snapshot...", mw)
     dialog.set_text("Exporting collection to Git repo...")
     dialog.show()
+    QApplication.processEvents()
+
+    def progress(text: str) -> None:
+        dialog.set_text(text)
+        QApplication.processEvents()
 
     try:
         result = export_collection(
             mw.col, repo_path,
-            remote_url=config.remote_url if config.auto_push_after_snapshot else ""
+            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+            progress_callback=progress,
         )
         dialog.close()
 
@@ -130,7 +136,14 @@ def show_menu() -> None:
         mw.form.menubar.addMenu(parent_menu)
 
 
+_menu_shown = False
+
+
 def on_profile_open() -> None:
+    global _menu_shown
+    if not _menu_shown:
+        show_menu()
+        _menu_shown = True
     config = load_config()
     if config.auto_sync_on_startup and config.repo_path:
         snapshot_action()
@@ -175,9 +188,13 @@ def _debounced_export() -> None:
         pass
 
 
+def _on_operation(changes, handler) -> None:
+    if changes.note or changes.notetype:
+        on_note_change(None)
+
+
 def init_addon() -> None:
     from aqt import gui_hooks
-    show_menu()
     gui_hooks.profile_did_open.append(on_profile_open)
     gui_hooks.profile_will_close.append(on_profile_close)
-    gui_hooks.note_will_flush.append(on_note_change)
+    gui_hooks.operation_did_execute.append(_on_operation)

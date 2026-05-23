@@ -61,8 +61,8 @@ sort_field: 0
 type: 0
 ```
 
-### Notes (`decks/<Deck>/notes.md`)
-- One file per deck, one note per section
+### Notes (`decks/<Deck>/<nid>.md`)
+- One file per note, named `<nid>.md` within the deck directory
 - HTML comment header is machine-readable without cluttering visual
 - Each field gets an `##` heading
 
@@ -108,7 +108,8 @@ my-anki-repo/
 ├── decks/
 │   ├── Japanese/
 │   │   └── N5/
-│   │       └── notes.md
+│   │       ├── 1234567890.md
+│   │       └── ...
 │   └── ...
 ├── media/              # symlinked or copied
 └── .gitignore
@@ -136,4 +137,56 @@ Store `{nid: md5(content)}` in `.ki/meta.json` for every exported note:
 
 ## Testing
 
-Use `pytest`. Tests live in `tests/`. The engine layer must be testable without a running Anki instance. Use a dev collection with 500+ notes across 5+ notetypes.
+Use `pytest`. Tests live in `tests/`. The engine layer must be testable without a running Anki instance.
+
+### Smoke tests
+
+`tests/test_addon_smoke.py` verifies:
+- All addon modules import without errors (requires `anki`/`aqt`)
+- Headless `anki.collection.Collection` works
+- Full export pipeline creates a repo, is idempotent on re-export
+- Notetype YAML round-trips with JS-heavy templates
+- Note file export
+
+Tests that need `anki`/`aqt` are marked `@integration` and skip gracefully when the packages aren't available.
+
+### Running
+
+```bash
+# Unit tests only (works in uv venv without anki/aqt)
+uv run pytest tests/ -m "not integration"
+
+# All tests (needs anki/aqt installed system-wide)
+python3 -m pytest tests/
+```
+
+## Development Tooling
+
+### uv (package manager)
+
+```bash
+uv sync                  # create venv + install deps
+uv run pytest ...        # run commands in the venv
+uv run flake8 ...        # lint
+```
+
+### Build
+
+```bash
+python3 build.py all     # clean → build → package .ankiaddon
+```
+
+### Release
+
+```bash
+python3 scripts/release.py 0.2.0   # bump version, commit, tag, push
+# CI auto-builds and creates a GitHub Release
+```
+
+### CI
+
+`.github/workflows/ci.yml` — runs on push/PR to master:
+1. **Lint** — `flake8`
+2. **Test** — unit tests + integration tests (with anki/aqt installed via wheel)
+3. **Build** — `build.py all` creates `.ankiaddon`
+4. **Auto-release** (master only) — bump patch version → commit → tag → build → GitHub Release

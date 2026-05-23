@@ -1,8 +1,11 @@
+# Anki addon builds
+*.ankiaddon
+build/
+vendor/
+anki_git/meta.json
 
 *$py.class
-#   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
-#  before PyInstaller builds the exe, so as to inject date/other infos into it.
-build/
+
 # Byte-compiled / optimized / DLL files
 .cache
 celerybeat.pid
@@ -80,7 +83,7 @@ __pypackages__/
 # Pyre type checker
 .pytest_cache/
 .Python
-.python-version
+#.python-version
 .ropeproject
 # Rope project settings
 # SageMath parsed files

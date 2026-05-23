@@ -101,3 +101,10 @@ def serialize_notes(notes: List[Note]) -> str:
 def write_notes_file(path: Path, notes: List[Note]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(serialize_notes(notes), encoding="utf-8")
+
+
+def write_note_file(deck_dir: Path, note: Note) -> Path:
+    deck_dir.mkdir(parents=True, exist_ok=True)
+    path = deck_dir / f"{note.nid}.md"
+    path.write_text(note.serialize(), encoding="utf-8")
+    return path

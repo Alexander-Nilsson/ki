@@ -6,18 +6,18 @@ Built on the foundation of [ki](https://github.com/langfield/ki) — reimagined 
 
 ## Status
 
-Under active development. MVP is a read-only snapshot tool (Tools > AnkiGit > Take Snapshot).
+Working MVP: **Take Snapshot** in Tools → AnkiGit, with progress feedback, per-note file export, and idempotent re-exports.
 
-## Features (Roadmap)
+## Features
 
-- **Snapshot** — export your entire collection to a Git repo of Markdown notes + YAML notetypes
+- **Snapshot** — export your entire collection to a Git repo (one Markdown file per note, YAML notetypes)
 - **Incremental export** — only re-export changed notes since the last snapshot
 - **Notetype tracking** — clean YAML export with CSS separated into its own file
-- **Import** — apply changes from your Git repo back into Anki
-- **Conflict resolution** — three-way merge detection with a Qt dialog for manual resolution
-- **Auto-sync** — debounced export on note changes, snapshot on close
-- **Remote push** — push your repo to GitHub/GitLab for backup or collaboration
-- **Media handling** — opt-in strategies: none, symlink, copy, git-lfs
+- **Progress feedback** — animated progress bar with step-by-step status during export
+- **Auto-sync** — debounced auto-export on note changes, snapshot on profile close
+- **Import** — apply changes from your Git repo back into Anki (planned)
+- **Conflict resolution** — three-way merge detection with a Qt dialog (planned)
+- **Remote push** — push your repo to GitHub/GitLab (planned)
 
 ## Architecture
 
@@ -44,7 +44,34 @@ anki_git/
 
 ## Installation
 
-*Coming soon — installable via AnkiWeb or manually.*
+### From source (development)
+
+```bash
+# Clone the repo and symlink into Anki's addons directory
+git clone https://github.com/your-username/anki_git
+ln -s "$(pwd)/anki_git/anki_git" ~/.local/share/Anki2/addons21/anki_git
+```
+
+### uv (for development without Anki)
+
+```bash
+uv sync                    # create venv + install deps
+uv run pytest ...          # run tests
+uv run flake8 ...          # lint
+```
+
+### Building
+
+```bash
+python3 build.py all       # creates .ankiaddon in build/
+```
+
+## Development
+
+```bash
+uv run pytest tests/ -m "not integration"   # engine-layer tests only
+python3 -m pytest tests/                     # all tests (needs anki/aqt)
+```
 
 ## License
 

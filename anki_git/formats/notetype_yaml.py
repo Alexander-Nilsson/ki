@@ -81,29 +81,40 @@ class Notetype:
         )
 
     def to_yaml_lines(self) -> List[str]:
-        lines = [f"name: {self.name}", f"id: {self.id}", "fields:"]
-        for f in self.fields:
-            lines.append(f"  - name: {f.name}")
-            lines.append(f"    ord: {f.ord}")
-            lines.append(f"    font: {f.font}")
-            lines.append(f"    size: {f.size}")
-            lines.append(f"    sticky: {str(f.sticky).lower()}")
-        lines.append("templates:")
-        for t in self.templates:
-            lines.append(f"  - name: {t.name}")
-            lines.append(f"    ord: {t.ord}")
-            lines.append(f"    qfmt: {repr(t.qfmt)}")
-            lines.append(f"    afmt: {repr(t.afmt)}")
-            if t.bqfmt:
-                lines.append(f"    bqfmt: {repr(t.bqfmt)}")
-            if t.bafmt:
-                lines.append(f"    bafmt: {repr(t.bafmt)}")
-        lines.append(f"css: |")
-        for css_line in self.css.split("\n"):
-            lines.append(f"  {css_line}")
-        lines.append(f"sort_field: {self.sort_field}")
-        lines.append(f"type: {self.type}")
-        return lines
+        import yaml
+
+        d = {
+            "name": self.name,
+            "id": self.id,
+            "fields": [
+                {
+                    "name": f.name,
+                    "ord": f.ord,
+                    "font": f.font,
+                    "size": f.size,
+                    "sticky": f.sticky,
+                }
+                for f in self.fields
+            ],
+            "templates": [
+                {
+                    "name": t.name,
+                    "ord": t.ord,
+                    "qfmt": t.qfmt,
+                    "afmt": t.afmt,
+                }
+                for t in self.templates
+            ],
+            "css": self.css,
+            "sort_field": self.sort_field,
+            "type": self.type,
+        }
+        for t_orig, t_dict in zip(self.templates, d["templates"]):
+            if t_orig.bqfmt:
+                t_dict["bqfmt"] = t_orig.bqfmt
+            if t_orig.bafmt:
+                t_dict["bafmt"] = t_orig.bafmt
+        return yaml.safe_dump(d, allow_unicode=True, default_flow_style=False, sort_keys=False).rstrip("\n").split("\n")
 
     @classmethod
     def from_yaml_lines(cls, lines: List[str]) -> "Notetype":

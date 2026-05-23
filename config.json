@@ -1,0 +1,42 @@
+{
+  "repo_path": {
+    "type": "string",
+    "value": "",
+    "description": "Path to the Git repository for snapshot exports"
+  },
+  "auto_sync_on_startup": {
+    "type": "boolean",
+    "value": false,
+    "description": "Automatically take a snapshot when Anki starts"
+  },
+  "auto_snapshot_on_close": {
+    "type": "boolean",
+    "value": false,
+    "description": "Automatically take a snapshot when Anki closes"
+  },
+  "debounce_delay_ms": {
+    "type": "number",
+    "value": 2000,
+    "description": "Debounce delay in milliseconds for auto-export on note changes"
+  },
+  "media_strategy": {
+    "type": "string",
+    "value": "none",
+    "description": "Media file handling strategy (none, symlink, copy)"
+  },
+  "remote_url": {
+    "type": "string",
+    "value": "",
+    "description": "Remote Git URL for push after snapshot"
+  },
+  "auto_push_after_snapshot": {
+    "type": "boolean",
+    "value": false,
+    "description": "Automatically push to remote after each snapshot"
+  },
+  "log_level": {
+    "type": "string",
+    "value": "INFO",
+    "description": "Logging level (DEBUG, INFO, WARNING, ERROR)"
+  }
+}
