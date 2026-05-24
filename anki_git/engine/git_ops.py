@@ -1,13 +1,17 @@
 import datetime
+import logging
 from pathlib import Path
 from typing import Optional
 from datetime import timezone
 
 from git import Repo, GitCommandError
 
+_logger = logging.getLogger("anki_git")
+
 
 def init_repo(repo_path: Path) -> Repo:
     repo_path.mkdir(parents=True, exist_ok=True)
+    _logger.info("Initializing new Git repository at %s", repo_path)
     return Repo.init(repo_path)
 
 
@@ -65,14 +69,21 @@ def create_snapshot_commit(
 def push_to_remote(repo: Repo, remote_url: str) -> None:
     if not remote_url:
         return
+    _logger.info("Pushing to remote: %s", remote_url)
     try:
-        remote = repo.remote("origin")
-        if remote.url != remote_url:
-            remote.set_url(remote_url)
-    except ValueError:
-        remote = repo.create_remote("origin", remote_url)
+        try:
+            remote = repo.remote("origin")
+            if remote.url != remote_url:
+                _logger.info("Updating remote origin URL to %s", remote_url)
+                remote.set_url(remote_url)
+        except ValueError:
+            _logger.info("Creating remote origin with URL %s", remote_url)
+            remote = repo.create_remote("origin", remote_url)
 
-    remote.push(refspec="main:main")
+        remote.push(refspec="main:main")
+    except Exception as e:
+        _logger.exception("Failed to push to remote")
+        raise
 
 
 def is_dirty(repo: Repo) -> bool:

@@ -128,8 +128,12 @@ def import_from_repo(col, repo_path: Path) -> ImportResult:
         _import_notetypes(col, repo_path, result)
         _import_notes(col, repo_path, result)
         col.db.commit()
+        _logger.info("Import complete: %d notes, %d notetypes",
+                    result.notes_updated + result.notes_created,
+                    result.notetypes_updated + result.notetypes_created)
     except Exception as e:
         col.db.rollback()
+        _logger.exception("Import failed")
         result.errors.append(str(e))
 
     return result
@@ -192,6 +196,7 @@ def _import_notes(col, repo_path: Path, result: ImportResult) -> None:
             else:
                 model_id = col.models.id_for_name(note_data.notetype)
                 if model_id is None:
+                    _logger.warning("Notetype '%s' not found for nid %d", note_data.notetype, note_data.nid)
                     result.warnings.append(f"Notetype '{note_data.notetype}' not found for nid {note_data.nid}")
                     continue
                 new_note = col.new_note(model_id)

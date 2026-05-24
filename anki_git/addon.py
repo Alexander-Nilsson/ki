@@ -10,6 +10,14 @@ _export_timer = None
 _config = None
 _logger = logging.getLogger("anki_git")
 
+# Setup file logging for debugging
+_log_path = Path(__file__).parent.parent / "anki_git.log"
+_file_handler = logging.FileHandler(_log_path, encoding="utf-8")
+_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+_logger.addHandler(_file_handler)
+_logger.setLevel(logging.DEBUG)
+_logger.info("AnkiGit logger initialized. Logging to %s", _log_path)
+
 
 def _import(name):
     import importlib
@@ -50,6 +58,7 @@ def snapshot_action() -> None:
     from aqt.qt import QMessageBox
     from aqt.operations import QueryOp
     from anki_git.ui import DiffDialog
+    from anki_git.engine.diff import compute_export_diff
 
     config = load_config()
     from aqt import mw
@@ -66,12 +75,28 @@ def snapshot_action() -> None:
 
     repo_path = Path(config.repo_path)
 
-    def on_diff_done(report):
+    def get_diff_with_progress(col):
+        report = compute_export_diff(
+            col, repo_path,
+            progress_callback=lambda text: mw.taskman.run_on_main(
+                lambda: mw.progress.update(label=text, type="sticky")
+            )
+        )
+        if not report.has_changes:
+            return report, None
+        
+        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview...", type="sticky"))
+        from anki_git.ui.diff import report_to_diff_data
+        ui_data = report_to_diff_data(report)
+        return report, ui_data
+
+    def on_diff_done(result_tuple):
+        report, ui_data = result_tuple
         if not report.has_changes:
             QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
             return
 
-        diff_dialog = DiffDialog.from_report(report, mw)
+        diff_dialog = DiffDialog(ui_data, mw)
         if not diff_dialog.exec():
             return
 
@@ -87,32 +112,36 @@ def snapshot_action() -> None:
 
         def on_export_done(result):
             if result.error:
+                _logger.error("Export failed: %s", result.error)
                 QMessageBox.critical(mw, "AnkiGit Snapshot", f"Error: {result.error}")
                 return
 
-            repo = get_or_init_repo(repo_path)
-            commit_count = get_commit_count(repo)
             msg = (
                 f"Snapshot complete.\n"
                 f"Notes changed: {result.notes_changed}\n"
                 f"Notetypes changed: {result.notetypes_changed}\n"
-                f"Total commits: {commit_count}\n"
+                f"Total commits: {result.commit_count}\n"
                 f"Duration: {result.duration_seconds:.1f}s"
             )
             QMessageBox.information(mw, "AnkiGit Snapshot", msg)
+
+        def on_export_failed(e):
+            _logger.exception("Export operation failed")
+            QMessageBox.critical(mw, "AnkiGit", f"Snapshot failed: {e}")
 
         QueryOp(
             parent=mw,
             op=do_export,
             success=on_export_done,
-        ).failure(lambda e: QMessageBox.critical(mw, "AnkiGit", f"Snapshot failed: {e}")).with_progress("Taking Snapshot...").run_in_background()
+        ).failure(on_export_failed).with_progress("Taking Snapshot...").run_in_background()
 
     def on_diff_failed(e):
+        _logger.exception("Failed to compute export diff")
         QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
 
     QueryOp(
         parent=mw,
-        op=lambda col: compute_export_diff(col, repo_path),
+        op=get_diff_with_progress,
         success=on_diff_done,
     ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
 
@@ -142,12 +171,28 @@ def import_action() -> None:
         QMessageBox.warning(mw, "AnkiGit", "No Git repository found. Take a snapshot first.")
         return
 
-    def on_diff_done(report):
+    def get_diff_with_progress(col):
+        report = compute_import_diff(
+            col, repo_path,
+            progress_callback=lambda text: mw.taskman.run_on_main(
+                lambda: mw.progress.update(label=text, type="sticky")
+            )
+        )
         if not report.has_changes:
+            return report, None
+        
+        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview...", type="sticky"))
+        from anki_git.ui.diff import report_to_diff_data
+        ui_data = report_to_diff_data(report)
+        return report, ui_data
+
+    def on_diff_done(result_tuple):
+        report, ui_data = result_tuple
+        if not report or not report.has_changes:
             QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to import.")
             return
 
-        diff_dialog = DiffDialog.from_report(report, mw)
+        diff_dialog = DiffDialog(ui_data, mw)
         if not diff_dialog.exec():
             return
 
@@ -176,6 +221,11 @@ def import_action() -> None:
             )
 
         def on_import_done(result):
+            if result.error:
+                _logger.error("Import failed: %s", result.error)
+                QMessageBox.critical(mw, "AnkiGit", f"Import failed: {result.error}")
+                return
+
             msg = (
                 f"Import complete.\n"
                 f"Notes updated: {result.notes_updated}\n"
@@ -184,24 +234,31 @@ def import_action() -> None:
                 f"Notetypes created: {result.notetypes_created}"
             )
             if result.warnings:
+                _logger.warning("Import warnings: %s", result.warnings)
                 msg += "\nWarnings:\n" + "\n".join(result.warnings[:5])
             if result.errors:
+                _logger.error("Import errors: %s", result.errors)
                 msg += "\nErrors:\n" + "\n".join(result.errors[:5])
             QMessageBox.information(mw, "AnkiGit Import", msg)
             mw.reset()
+
+        def on_import_failed(e):
+            _logger.exception("Import operation failed")
+            QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")
 
         QueryOp(
             parent=mw,
             op=do_import,
             success=on_import_done,
-        ).failure(lambda e: QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")).with_progress("Pulling from Repo...").run_in_background()
+        ).failure(on_import_failed).with_progress("Pulling from Repo...").run_in_background()
 
     def on_diff_failed(e):
+        _logger.exception("Failed to compute import diff")
         QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
 
     QueryOp(
         parent=mw,
-        op=lambda col: compute_import_diff(col, repo_path),
+        op=get_diff_with_progress,
         success=on_diff_done,
     ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
 

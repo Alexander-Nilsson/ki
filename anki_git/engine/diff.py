@@ -188,11 +188,14 @@ def compute_notetype_diff(
     )
 
 
-def compute_export_diff(col, repo_path: Path) -> DiffReport:
+def compute_export_diff(col, repo_path: Path, progress_callback: callable = None) -> DiffReport:
     """Compare current Anki collection vs repo state for export preview."""
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
     report = DiffReport()
+
+    if progress_callback:
+        progress_callback("Reading notetypes...")
 
     notetypes_dir = repo_path / "notetypes"
     decks_dir = repo_path / "decks"
@@ -212,13 +215,17 @@ def compute_export_diff(col, repo_path: Path) -> DiffReport:
             report.notetype_diffs.append(diff)
 
     nids = col.db.list("SELECT id FROM notes WHERE id > 0")
+    total = len(nids)
     repo_notes_by_id: Dict[int, Note] = {}
-    for notes_file in sorted(decks_dir.rglob("*.md")):
-        for n in parse_notes_file(notes_file):
-            repo_notes_by_id[n.nid] = n
+    if decks_dir.exists():
+        for notes_file in sorted(decks_dir.rglob("*.md")):
+            for n in parse_notes_file(notes_file):
+                repo_notes_by_id[n.nid] = n
 
     seen_ids = set()
-    for nid in nids:
+    for i, nid in enumerate(nids):
+        if progress_callback and i % 20 == 0:
+            progress_callback(f"Diffing notes... {i}/{total}")
         try:
             note_obj = col.get_note(nid)
         except Exception:
@@ -248,11 +255,14 @@ def compute_export_diff(col, repo_path: Path) -> DiffReport:
     return report
 
 
-def compute_import_diff(col, repo_path: Path) -> DiffReport:
+def compute_import_diff(col, repo_path: Path, progress_callback: callable = None) -> DiffReport:
     """Compare repo state vs current Anki collection for import preview."""
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
     report = DiffReport()
+
+    if progress_callback:
+        progress_callback("Reading notetypes...")
 
     notetypes_dir = repo_path / "notetypes"
     decks_dir = repo_path / "decks"
@@ -273,7 +283,10 @@ def compute_import_diff(col, repo_path: Path) -> DiffReport:
 
     col_notes_by_id: Dict[int, Note] = {}
     nids = col.db.list("SELECT id FROM notes WHERE id > 0")
-    for nid in nids:
+    total_col = len(nids)
+    for i, nid in enumerate(nids):
+        if progress_callback and i % 50 == 0:
+            progress_callback(f"Analyzing collection... {i}/{total_col}")
         try:
             note_obj = col.get_note(nid)
         except Exception:
@@ -289,7 +302,11 @@ def compute_import_diff(col, repo_path: Path) -> DiffReport:
         col_notes_by_id[nid] = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=dict(note_obj.items()))
 
     seen_ids = set()
-    for notes_file in sorted(decks_dir.rglob("*.md")):
+    notes_files = sorted(decks_dir.rglob("*.md")) if decks_dir.exists() else []
+    total_files = len(notes_files)
+    for i, notes_file in enumerate(notes_files):
+        if progress_callback and i % 5 == 0:
+            progress_callback(f"Diffing repo files... {i}/{total_files}")
         for repo_note in parse_notes_file(notes_file):
             seen_ids.add(repo_note.nid)
             col_note = col_notes_by_id.get(repo_note.nid)

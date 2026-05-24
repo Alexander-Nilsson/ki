@@ -13,6 +13,7 @@ from anki_git.engine.git_ops import (
     ensure_gitignore,
     create_snapshot_commit,
     push_to_remote,
+    get_commit_count,
 )
 from anki_git.formats.notetype_yaml import (
     Notetype,
@@ -39,6 +40,7 @@ class ExportResult:
         changed_notetypes: List[str] = None,
         error: str = "",
         duration_seconds: float = 0.0,
+        commit_count: int = 0,
     ):
         self.notes_changed = notes_changed
         self.notetypes_changed = notetypes_changed
@@ -46,6 +48,7 @@ class ExportResult:
         self.changed_notetypes = changed_notetypes or []
         self.error = error
         self.duration_seconds = duration_seconds
+        self.commit_count = commit_count
 
 
 def export_collection(
@@ -113,7 +116,8 @@ def export_collection(
             progress_callback(f"Processing notes... {i}/{total}")
         try:
             note_obj = col.get_note(nid)
-        except Exception:
+        except Exception as e:
+            _logger.warning("Failed to get note %d: %s", nid, e)
             continue
         mid = note_obj.mid
         if mid not in _nt_name_cache:
@@ -122,9 +126,11 @@ def export_collection(
         try:
             cards = note_obj.cards()
             if not cards:
+                _logger.debug("Note %d has no cards, skipping", nid)
                 continue
             deck_name = col.decks.name(cards[0].did)
-        except Exception:
+        except Exception as e:
+            _logger.warning("Failed to get deck for note %d: %s", nid, e)
             continue
 
         fields = dict(note_obj.items())
@@ -196,6 +202,7 @@ def export_collection(
                 progress_callback("Pushing to remote...")
             push_to_remote(repo, remote_url)
 
+    result.commit_count = get_commit_count(repo)
     result.duration_seconds = time.perf_counter() - _start
     _logger.info(
         "Snapshot took %.2fs: %d notes changed, %d notetypes changed",
