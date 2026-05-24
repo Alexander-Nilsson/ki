@@ -5,9 +5,11 @@ from urllib.parse import quote, unquote
 
 
 HEADER_PATTERN = re.compile(
-    r"<!--\s*note:\s*nid=(?P<nid>\d+)\s+notetype=(?P<notetype>\S+)"
+    r"<!--\s*note:\s*nid=(?P<nid>\d+)\s+"
+    r"notetype=(?P<notetype>.+?)"
     r"(?:\s+tags=(?P<tags>\S*))?"
-    r"(?:\s+deck=(?P<deck>.+?))?\s*-->"
+    r"(?:\s+deck=(?P<deck>.+?))?"
+    r"\s*-->"
 )
 
 
@@ -17,6 +19,10 @@ def _decode_tags(tags_str: Optional[str]) -> List[str]:
     # New format: URL-encoded tags joined with '||'
     if '||' in tags_str:
         return [unquote(t) for t in tags_str.split('||')]
+    # New format single tag (URL-encoded, no || needed).
+    # Detect by looking for percent-encoding of special characters.
+    if re.search(r"%[0-9A-Fa-f]{2}", tags_str):
+        return [unquote(tags_str)]
     # Old format (backward compat): raw tags joined with '::'
     return tags_str.split("::")
 
