@@ -39,11 +39,10 @@ anki_git/
 ## Commands
 
 ```bash
-uv run pytest tests/ -m "not integration"   # unit tests only (no anki/aqt needed)
-python3 -m pytest tests/                     # all tests (needs anki/aqt installed)
+uv run pytest tests/                         # all tests (needs anki/aqt installed)
 uv run flake8 anki_git/ tests/               # lint
-python3 build.py all                         # clean → build → package .ankiaddon
-python3 scripts/release.py 0.2.0             # bump version, tag, push
+uv run python build.py all                   # clean → build → package .ankiaddon
+uv run python scripts/release.py 0.2.0       # bump version, tag, push
 ```
 
 ## Quirks

@@ -218,7 +218,10 @@ def compute_export_diff(col, repo_path: Path, progress_callback: callable = None
     total = len(nids)
     repo_notes_by_id: Dict[int, Note] = {}
     if decks_dir.exists():
-        for notes_file in sorted(decks_dir.rglob("*.md")):
+        files = list(decks_dir.rglob("*.md"))
+        for i, notes_file in enumerate(files):
+            if progress_callback and i % 50 == 0:
+                progress_callback(f"Scanning repo... {i}/{len(files)}")
             for n in parse_notes_file(notes_file):
                 repo_notes_by_id[n.nid] = n
 

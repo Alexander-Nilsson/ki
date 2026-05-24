@@ -1,6 +1,7 @@
 """Diff review dialog for git-style change review."""
 
 import difflib
+import logging
 from typing import List, Dict, Any, Optional
 
 from aqt.qt import (
@@ -21,9 +22,21 @@ from aqt.qt import (
 )
 from aqt import mw
 
+_logger = logging.getLogger("anki_git")
+
 
 def get_token_diff(old_str: str, new_str: str):
-    """Perform token-level diffing using SequenceMatcher."""
+    """Perform token-level diffing using SequenceMatcher.
+    Limit input length to avoid O(N^3) performance issues on very long lines.
+    """
+    # If lines are extremely long, token diff is likely useless and very slow
+    MAX_LINE_LEN = 5000
+    if len(old_str) > MAX_LINE_LEN or len(new_str) > MAX_LINE_LEN:
+        return (
+            old_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"),
+            new_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        )
+
     sm = difflib.SequenceMatcher(None, old_str, new_str)
     res_old = []
     res_new = []
@@ -96,21 +109,38 @@ class SidebarItemWidget(QWidget):
 def report_to_diff_data(report) -> List[Dict[str, Any]]:
     """Convert engine DiffReport to the structure expected by DiffDialog."""
     data = []
+    
+    # If there are thousands of notes, we might want to cap it for the UI
+    # but for now let's just make sure individual notes don't hang.
+    MAX_FIELD_LEN = 20000 
+
     for nd in report.note_diffs:
         fields = []
         for fd in nd.field_diffs:
-            # We use SequenceMatcher to find hunks for the UI
-            s = difflib.SequenceMatcher(None, fd.old_value.splitlines(), fd.new_value.splitlines())
-            hunks = []
-            for tag, i1, i2, j1, j2 in s.get_opcodes():
-                if tag == 'equal':
-                    continue
-                hunks.append({
-                    "removed": "\n".join(fd.old_value.splitlines()[i1:i2]),
-                    "added": "\n".join(fd.new_value.splitlines()[j1:j2]),
-                    "context_before": "\n".join(fd.old_value.splitlines()[max(0, i1-2):i1]),
-                    "context_after": "\n".join(fd.old_value.splitlines()[i2:i2+2])
-                })
+            old_val = fd.old_value
+            new_val = fd.new_value
+            
+            # If field is too large, diffing it is extremely slow and likely unreadable
+            if len(old_val) > MAX_FIELD_LEN or len(new_val) > MAX_FIELD_LEN:
+                hunks = [{
+                    "removed": "(Field too large to diff - see raw file)" if old_val else "",
+                    "added": "(Field too large to diff - see raw file)" if new_val else "",
+                    "context_before": "",
+                    "context_after": ""
+                }]
+            else:
+                # We use SequenceMatcher to find hunks for the UI
+                s = difflib.SequenceMatcher(None, old_val.splitlines(), new_val.splitlines())
+                hunks = []
+                for tag, i1, i2, j1, j2 in s.get_opcodes():
+                    if tag == 'equal':
+                        continue
+                    hunks.append({
+                        "removed": "\n".join(old_val.splitlines()[i1:i2]),
+                        "added": "\n".join(new_val.splitlines()[j1:j2]),
+                        "context_before": "\n".join(old_val.splitlines()[max(0, i1-2):i1]),
+                        "context_after": "\n".join(old_val.splitlines()[i2:i2+2])
+                    })
             fields.append({"name": fd.field_name, "hunks": hunks})
         
         data.append({
@@ -342,11 +372,18 @@ class DiffDialog(QDialog):
         self.diff_browser.document().setDefaultStyleSheet(diff_qss)
 
     def _populate_sidebar(self):
+        _logger.info("Populating DiffDialog sidebar with %d items", len(self.diff_data))
         notes = [d for d in self.diff_data if d["type"] == "note"]
         templates = [d for d in self.diff_data if d["type"] == "template"]
         
         self.sidebar_map = [] # To map row index to diff_data index
         
+        # Performance optimization: if there are thousands of changes, 
+        # setItemWidget for all of them will hang the UI.
+        # We limit the number of widgets for now.
+        MAX_WIDGETS = 500
+        total_selectable = 0
+
         if notes:
             header = QListWidgetItem("NOTE CONTENT")
             header.setFlags(Qt.ItemFlag.NoItemFlags)
@@ -356,13 +393,24 @@ class DiffDialog(QDialog):
             lbl.setProperty("class", "sectionLabel")
             self.sidebar.setItemWidget(header, lbl)
             
-            for item in notes:
-                idx = self.diff_data.index(item)
-                self.sidebar_map.append(idx)
+            for item_idx, item in enumerate(self.diff_data):
+                if item["type"] != "note":
+                    continue
+                
+                self.sidebar_map.append(item_idx)
                 li = QListWidgetItem()
                 li.setSizeHint(QSize(0, 50))
+                # Store the data index directly in the item
+                li.setData(Qt.ItemDataRole.UserRole, total_selectable)
+                li.setData(Qt.ItemDataRole.UserRole + 1, item_idx)
+                
                 self.sidebar.addItem(li)
-                self.sidebar.setItemWidget(li, SidebarItemWidget(item))
+                if total_selectable < MAX_WIDGETS:
+                    self.sidebar.setItemWidget(li, SidebarItemWidget(item))
+                else:
+                    li.setText(f"Note {item['id']}") # Fallback for performance
+                
+                total_selectable += 1
                 
         if templates:
             if notes:
@@ -380,37 +428,43 @@ class DiffDialog(QDialog):
             lbl.setProperty("class", "sectionLabel")
             self.sidebar.setItemWidget(header, lbl)
             
-            for item in templates:
-                idx = self.diff_data.index(item)
-                self.sidebar_map.append(idx)
+            for item_idx, item in enumerate(self.diff_data):
+                if item["type"] != "template":
+                    continue
+                
+                self.sidebar_map.append(item_idx)
                 li = QListWidgetItem()
                 li.setSizeHint(QSize(0, 50))
+                li.setData(Qt.ItemDataRole.UserRole, total_selectable)
+                li.setData(Qt.ItemDataRole.UserRole + 1, item_idx)
+
                 self.sidebar.addItem(li)
-                self.sidebar.setItemWidget(li, SidebarItemWidget(item))
+                if total_selectable < MAX_WIDGETS:
+                    self.sidebar.setItemWidget(li, SidebarItemWidget(item))
+                else:
+                    li.setText(item['id'])
+                
+                total_selectable += 1
+        
+        _logger.info("Sidebar population complete")
 
     def _load_item(self, sidebar_row):
-        # We need to map sidebar_row to actual data index
-        # QListWidget triggers this when we click a header too, so we must check flags
         item = self.sidebar.item(sidebar_row)
         if not item or not (item.flags() & Qt.ItemFlag.ItemIsSelectable):
             return
 
-        # Count how many selectable items are before this one
-        data_idx = -1
-        current_selectable_idx = 0
-        for i in range(self.sidebar.count()):
-            li = self.sidebar.item(i)
-            if li.flags() & Qt.ItemFlag.ItemIsSelectable:
-                if i == sidebar_row:
-                    data_idx = self.sidebar_map[current_selectable_idx]
-                    self.current_index = current_selectable_idx
-                    break
-                current_selectable_idx += 1
+        # Use stored data instead of searching (O(1) instead of O(N))
+        selectable_idx = item.data(Qt.ItemDataRole.UserRole)
+        data_idx = item.data(Qt.ItemDataRole.UserRole + 1)
         
-        if data_idx == -1:
+        if data_idx is None:
             return
             
+        self.current_index = selectable_idx
         data = self.diff_data[data_idx]
+        
+        _logger.debug("Loading item %d (id: %s)", data_idx, data["id"])
+        
         self.header_title.setText(str(data["id"]))
         self.header_subtitle.setText(data.get("deck") or data.get("notetype") or "")
         

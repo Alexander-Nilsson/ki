@@ -94,39 +94,49 @@ def snapshot_action() -> None:
     repo_path = Path(config.repo_path)
 
     def get_diff_with_progress(col):
+        _logger.info("Computing export diff...")
         report = compute_export_diff(
             col, repo_path,
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             )
         )
+        _logger.info("Diff computed: %d notes, %d notetypes changed", len(report.note_diffs), len(report.notetype_diffs))
         if not report.has_changes:
             return report, None
         
+        _logger.info("Converting report to UI data...")
         mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
+        _logger.info("UI data ready (%d items)", len(ui_data))
         return report, ui_data
 
     def on_diff_done(result_tuple):
+        _logger.info("on_diff_done reached")
         report, ui_data = result_tuple
         if not report.has_changes:
+            _logger.info("No changes to export")
             QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
             return
 
+        _logger.info("Opening DiffDialog...")
         diff_dialog = DiffDialog(ui_data, mw)
+        _logger.info("DiffDialog initialized")
         if not diff_dialog.exec():
+            _logger.info("User discarded changes")
             return
 
-        def do_export(col):
-            return export_collection(
-                col, repo_path,
-                remote_url=config.remote_url if config.auto_push_after_snapshot else "",
-                progress_callback=lambda text: mw.taskman.run_on_main(
-                    lambda: mw.progress.update(label=text)
-                ),
-                media_strategy=config.media_strategy,
-            )
+        _logger.info("User accepted changes, starting export...")
+        return export_collection(
+            col,
+            repo_path,
+            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+            progress_callback=lambda text: mw.taskman.run_on_main(
+                lambda: mw.progress.update(label=text)
+            ),
+            media_strategy=config.media_strategy,
+        )
 
         def on_export_done(result):
             if result.error:
