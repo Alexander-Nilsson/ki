@@ -17,11 +17,12 @@ from typing import Callable, Dict, Set
 from anki.collection import Collection
 
 from anki_git.config import SyncMode
-from anki_git.engine.checksums import content_hash, load_meta, save_meta
+from anki_git.engine.checksums import load_meta, save_meta
 from anki_git.engine.conflict import (
     detect_conflicts,
     resolve_conflicts,
     merge_notetypes,
+    ConflictType,
 )
 from anki_git.engine.git_ops import (
     get_or_init_repo,
@@ -31,6 +32,7 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     get_commit_count,
 )
+from anki_git.engine import import_helpers
 from anki_git.formats.notetype_yaml import (
     Notetype,
     read_all_notetypes,
@@ -61,108 +63,6 @@ class SyncResult:
     commit_count: int = 0
 
 
-def _compute_anki_checksums(col: Collection) -> Dict[str, str]:
-    checksums = {}
-    for nid in col.db.list("SELECT id FROM notes WHERE id > 0"):
-        try:
-            note_obj = col.get_note(nid)
-        except Exception:
-            continue
-        serialized = "\n".join(f"{k}: {v}" for k, v in sorted(note_obj.items()))
-        checksums[str(nid)] = content_hash(serialized)
-    return checksums
-
-
-def _compute_git_checksums(repo_path: Path) -> Dict[str, str]:
-    from anki_git.formats.notes_md import parse_notes_file
-
-    checksums = {}
-    decks_dir = repo_path / DECKS_DIR
-    for notes_file in sorted(decks_dir.rglob("*.md")):
-        notes = parse_notes_file(notes_file)
-        for note_data in notes:
-            checksums[str(note_data.nid)] = content_hash(note_data.serialize())
-    return checksums
-
-
-def _import_single_note(col, repo_path: Path, nid: int) -> bool:
-    """Import a single note from repo into Anki. Returns True on success."""
-    from anki_git.formats.notes_md import parse_notes_file
-
-    decks_dir = repo_path / DECKS_DIR
-    for notes_file in sorted(decks_dir.rglob("*.md")):
-        notes = parse_notes_file(notes_file)
-        for note_data in notes:
-            if note_data.nid == nid:
-                try:
-                    existing = col.get_note(nid)
-                except Exception:
-                    existing = None
-
-                if existing is not None:
-                    for key, value in note_data.fields.items():
-                        if key in existing:
-                            existing[key] = value
-                    existing.tags = note_data.tags
-                    existing.flush()
-                    return True
-                else:
-                    model_id = col.models.id_for_name(note_data.notetype)
-                    if model_id is None:
-                        _logger.warning("Notetype '%s' not found for nid %d", note_data.notetype, nid)
-                        return False
-                    new_note = col.new_note(model_id)
-                    for key, value in note_data.fields.items():
-                        if key in new_note:
-                            new_note[key] = value
-                    new_note.tags = note_data.tags
-                    try:
-                        deck_id = col.decks.id(note_data.deck)
-                        col.add_note(new_note, deck_id)
-                        return True
-                    except Exception as e:
-                        _logger.warning("Failed to create note %d: %s", nid, e)
-                        return False
-    _logger.warning("Note %d not found in repo files", nid)
-    return False
-
-
-def _import_notetype(col, repo_path: Path, nt_name: str) -> bool:
-    """Import a single notetype from repo into Anki."""
-    notetypes_dir = repo_path / NOTETYPES_DIR
-    repo_nt = read_all_notetypes(notetypes_dir)
-    nt = repo_nt.get(nt_name)
-    if nt is None:
-        return False
-
-    existing = col.models.by_name(nt_name)
-    if existing:
-        existing["flds"] = [
-            {"name": f.name, "ord": f.ord, "font": f.font, "size": f.size, "sticky": f.sticky, "rtl": f.rtl, "id": f.id}
-            for f in nt.fields
-        ]
-        existing["tmpls"] = [
-            {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt, "id": t.id}
-            for t in nt.templates
-        ]
-        existing["css"] = nt.css
-        col.models.save(existing)
-    else:
-        new_nt = col.models.new(nt_name)
-        for f in nt.fields:
-            field = col.models.new_field(f.name)
-            field["rtl"] = f.rtl
-            col.models.add_field(new_nt, field)
-        for t in nt.templates:
-            tmpl = col.models.new_template(t.name)
-            tmpl["qfmt"] = t.qfmt
-            tmpl["afmt"] = t.afmt
-            col.models.add_template(new_nt, tmpl)
-        new_nt["css"] = nt.css
-        col.models.add_dict(new_nt)
-    return True
-
-
 def _export_single_note(col, repo_path: Path, nid: int) -> bool:
     """Export a single note from Anki into repo files."""
     try:
@@ -180,7 +80,10 @@ def _export_single_note(col, repo_path: Path, nid: int) -> bool:
         return False
 
     fields = dict(note_obj.items())
-    note = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=fields)
+    note = Note(
+        nid=nid, notetype=nt_name, tags=list(note_obj.tags),
+        deck=deck_name, fields=fields,
+    )
     deck_path_parts = deck_name.split("::")
     note_dir = repo_path / DECKS_DIR / Path(*deck_path_parts)
     serialized = note.serialize()
@@ -212,11 +115,11 @@ def sync_collection(
 
     if progress_callback:
         progress_callback("Computing Anki checksums...")
-    anki_checksums = _compute_anki_checksums(col)
+    anki_checksums = import_helpers.compute_anki_checksums(col)
 
     if progress_callback:
         progress_callback("Computing repo checksums...")
-    git_checksums = _compute_git_checksums(repo_path)
+    git_checksums = import_helpers.compute_git_checksums(repo_path)
 
     if progress_callback:
         progress_callback("Detecting conflicts...")
@@ -234,6 +137,8 @@ def sync_collection(
     changed_files: Set[str] = set()
     notes_to_export: set[int] = set()
     notes_to_import_nids: set[int] = set()
+    delete_from_anki_nids: set[int] = set()
+    delete_from_git_nids: set[int] = set()
 
     if progress_callback:
         progress_callback("Processing changes...")
@@ -251,16 +156,29 @@ def sync_collection(
         elif c.resolution == "git":
             notes_to_import_nids.add(c.nid)
 
-    # Apply changes: export (anki → repo)
+        if c.conflict_type == ConflictType.DELETE_FROM_ANKI:
+            delete_from_anki_nids.add(c.nid)
+        if c.conflict_type == ConflictType.DELETE_FROM_GIT:
+            delete_from_git_nids.add(c.nid)
+
+    # Build notes lookup once for O(n) import
+    notes_lookup = import_helpers.load_all_repo_notes(repo_path)
+
+    # Apply changes: import (repo -> anki)
     if progress_callback:
-        progress_callback("Exporting changes to repo...")
+        progress_callback("Importing changes from repo...")
 
     col.db.execute("begin")
     try:
-        # Import git changes into Anki first
         for nid in notes_to_import_nids:
-            if _import_single_note(col, repo_path, nid):
+            if import_helpers.import_single_note(
+                col, repo_path, nid, notes_lookup=notes_lookup,
+            ):
                 result.notes_imported += 1
+
+        for nid in delete_from_anki_nids:
+            if import_helpers.delete_note_from_anki(col, nid):
+                result.notes_deleted_from_anki += 1
 
         col.db.execute("commit")
     except Exception as e:
@@ -269,7 +187,10 @@ def sync_collection(
         result.error = str(e)
         return result
 
-    # Write exported notes to files
+    # Apply changes: export (anki -> repo)
+    if progress_callback:
+        progress_callback("Exporting changes to repo...")
+
     for nid in notes_to_export:
         if _export_single_note(col, repo_path, nid):
             result.notes_exported += 1
@@ -277,7 +198,14 @@ def sync_collection(
             for f in decks_dir.rglob(f"{nid}.md"):
                 changed_files.add(str(f.relative_to(repo_path)))
 
-    new_anki_checksums = _compute_anki_checksums(col)
+    for nid in delete_from_git_nids:
+        if import_helpers.delete_note_from_repo(repo_path, nid):
+            result.notes_deleted_from_git += 1
+            md_path = repo_path / DECKS_DIR / f"{nid}.md"
+            if md_path.exists():
+                changed_files.add(str(md_path.relative_to(repo_path)))
+
+    new_anki_checksums = import_helpers.compute_anki_checksums(col)
 
     # Detect notetype changes between Anki and repo
     anki_notetypes: Dict[str, Notetype] = {}
@@ -302,7 +230,7 @@ def sync_collection(
             write_notetype(notetypes_dir, merged)
             for p in notetype_paths(notetypes_dir, name):
                 changed_files.add(str(p.relative_to(repo_path)))
-            _import_notetype(col, repo_path, name)
+            import_helpers.import_notetype(col, repo_path, name)
             for c in nt_conflicts:
                 if c.resolved:
                     result.conflicts_resolved += 1
@@ -316,10 +244,10 @@ def sync_collection(
                 changed_files.add(str(p.relative_to(repo_path)))
             result.notetypes_exported += 1
         elif git_nt:
-            _import_notetype(col, repo_path, name)
+            import_helpers.import_notetype(col, repo_path, name)
             result.notetypes_imported += 1
 
-    notes_changed = result.notes_exported + notes_to_import_nids
+    notes_changed = result.notes_exported + result.notes_imported
     notetypes_changed = result.notetypes_exported + result.notetypes_imported
 
     if notes_changed > 0 or notetypes_changed > 0:
@@ -330,7 +258,9 @@ def sync_collection(
         meta["collection_path"] = str(col.path)
         save_meta(repo_path, meta)
 
-        changed_files.add(str((repo_path / META_DIR / "meta.json").relative_to(repo_path)))
+        changed_files.add(
+            str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
+        )
 
         stage_files(repo, list(changed_files))
         create_snapshot_commit(
@@ -350,7 +280,8 @@ def sync_collection(
     result.commit_count = get_commit_count(repo)
     result.duration_seconds = time.perf_counter() - _start
     _logger.info(
-        "Sync took %.2fs: %d notes exported, %d notes imported, %d notetypes exported, %d notetypes imported",
+        "Sync took %.2fs: %d notes exported, %d notes imported, "
+        "%d notetypes exported, %d notetypes imported",
         result.duration_seconds,
         result.notes_exported,
         result.notes_imported,
@@ -358,6 +289,8 @@ def sync_collection(
         result.notetypes_imported,
     )
     if progress_callback:
-        progress_callback(f"Sync complete ({result.duration_seconds:.1f}s)")
+        progress_callback(
+            f"Sync complete ({result.duration_seconds:.1f}s)"
+        )
 
     return result

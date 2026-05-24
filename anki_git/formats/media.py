@@ -1,4 +1,5 @@
 import re
+import subprocess
 from enum import Enum
 from pathlib import Path
 from typing import Set
@@ -12,6 +13,33 @@ class MediaStrategy(Enum):
 
 
 _MEDIA_PATTERN = re.compile(r'\[sound:(.*?)\]|<img[^>]*src="([^"]*)"')
+
+
+def _track_with_git_lfs(repo_media_dir: Path, fname: str) -> None:
+    """Track a file with Git LFS.
+
+    Runs `git lfs track` in the repo to add the file to LFS tracking,
+    then creates a .gitattributes entry if needed.
+    """
+    import logging
+
+    logger = logging.getLogger("anki_git")
+    try:
+        result = subprocess.run(
+            ["git", "lfs", "track", fname],
+            cwd=str(repo_media_dir.parent),
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode != 0:
+            logger.warning(
+                "git lfs track failed for %s: %s", fname, result.stderr
+            )
+    except FileNotFoundError:
+        logger.warning(
+            "git-lfs not installed. Install with: git lfs install"
+        )
+    except Exception as e:
+        logger.warning("Failed to track %s with git-lfs: %s", fname, e)
 
 
 def handle_media(
@@ -38,11 +66,14 @@ def handle_media(
                 dst.symlink_to(src.resolve())
             except OSError as e:
                 import logging
-                logging.getLogger("anki_git").warning("Failed to symlink media %s: %s", fname, e)
+                logging.getLogger("anki_git").warning(
+                    "Failed to symlink media %s: %s", fname, e
+                )
         elif strategy == MediaStrategy.COPY:
             dst.write_bytes(src.read_bytes())
         elif strategy == MediaStrategy.GIT_LFS:
             dst.write_bytes(src.read_bytes())
+            _track_with_git_lfs(repo_media_dir, fname)
 
 
 def get_media_filenames_from_fields(fields: str) -> Set[str]:

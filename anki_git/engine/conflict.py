@@ -117,7 +117,7 @@ def merge_notetypes(
 
     # ── Merge fields ──────────────────────────────────────────────
     def field_key(f):
-        return f.id if f.id else hash((f.name, f.ord))
+        return (f.name, f.ord)
 
     anki_fields_by_key = {field_key(f): f for f in anki_nt.fields}
     git_fields_by_key = {field_key(f): f for f in git_nt.fields}
@@ -158,7 +158,7 @@ def merge_notetypes(
 
     # ── Merge templates ───────────────────────────────────────────
     def tmpl_key(t):
-        return t.id if t.id else hash((t.name, t.ord))
+        return (t.name, t.ord)
 
     anki_tmpls_by_key = {tmpl_key(t): t for t in anki_nt.templates}
     git_tmpls_by_key = {tmpl_key(t): t for t in git_nt.templates}
@@ -243,24 +243,50 @@ def detect_conflicts(
         git = git_checksums.get(nid_str)
 
         if anki is None and git is None:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ALREADY_GONE))
+            report.conflicts.append(
+                NoteConflict(nid=nid, conflict_type=ConflictType.ALREADY_GONE)
+            )
         elif anki is None:
-            if git == base:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_GIT))
+            if base is None:
+                # New note in repo, never seen before
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.GIT_WINS)
+                )
+            elif git == base:
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_GIT)
+                )
             else:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT)
+                )
         elif git is None:
-            if anki == base:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_ANKI))
+            if base is None:
+                # New note in Anki, never seen before
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.ANKI_WINS)
+                )
+            elif anki == base:
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.DELETE_FROM_ANKI)
+                )
             else:
-                report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
+                report.conflicts.append(
+                    NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT)
+                )
         elif anki == git:
             pass
         elif anki == base and git != base:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.GIT_WINS))
+            report.conflicts.append(
+                NoteConflict(nid=nid, conflict_type=ConflictType.GIT_WINS)
+            )
         elif git == base and anki != base:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.ANKI_WINS))
+            report.conflicts.append(
+                NoteConflict(nid=nid, conflict_type=ConflictType.ANKI_WINS)
+            )
         else:
-            report.conflicts.append(NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT))
+            report.conflicts.append(
+                NoteConflict(nid=nid, conflict_type=ConflictType.CONFLICT)
+            )
 
     return report

@@ -4,7 +4,7 @@ from aqt.qt import (
     QFileDialog, QFormLayout, QGroupBox, QLabel,
 )
 
-from anki_git.config import KiSyncConfig, SyncMode
+from anki_git.config import KiSyncConfig, SYNC_MODE_CHOICES
 
 
 class SettingsDialog:
@@ -47,7 +47,7 @@ class SettingsDialog:
         sync_layout.addRow("Debounce delay:", debounce_layout)
 
         self._sync_mode_combo = QComboBox(self.dialog)
-        for value, label in SyncMode.CHOICES:
+        for value, label in SYNC_MODE_CHOICES:
             self._sync_mode_combo.addItem(label, value)
         sync_layout.addRow("Conflict resolution:", self._sync_mode_combo)
 

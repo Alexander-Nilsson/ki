@@ -2,7 +2,6 @@
 import json
 from pathlib import Path
 import tempfile
-import shutil
 
 from anki_git.formats.notetype_yaml import (
     Notetype,

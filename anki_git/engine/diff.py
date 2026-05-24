@@ -42,16 +42,16 @@ class NoteDiff:
     def added_lines(self) -> int:
         return sum(
             1 for fd in self.field_diffs
-            for l in fd.diff_lines
-            if l.startswith("+") and not l.startswith("+++")
+            for line in fd.diff_lines
+            if line.startswith("+") and not line.startswith("+++")
         )
 
     @property
     def deleted_lines(self) -> int:
         return sum(
             1 for fd in self.field_diffs
-            for l in fd.diff_lines
-            if l.startswith("-") and not l.startswith("---")
+            for line in fd.diff_lines
+            if line.startswith("-") and not line.startswith("---")
         )
 
 

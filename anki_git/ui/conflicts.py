@@ -1,12 +1,10 @@
-from typing import List
-
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QGroupBox, QMenu,
     QDialogButtonBox,
 )
 
-from anki_git.engine.conflict import ConflictReport, ConflictType, NoteConflict
+from anki_git.engine.conflict import ConflictReport, ConflictType
 
 
 class ConflictResolutionDialog(QDialog):
@@ -34,22 +32,32 @@ class ConflictResolutionDialog(QDialog):
 
             self._table = QTableWidget(self)
             self._table.setColumnCount(3)
-            self._table.setHorizontalHeaderLabels(["NID", "Conflict Type", "Action"])
+            self._table.setHorizontalHeaderLabels(
+                ["NID", "Conflict Type", "Action"]
+            )
             self._table.horizontalHeader().setStretchLastSection(True)
-            self._table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+            self._table.setSelectionBehavior(
+                QTableWidget.SelectionBehavior.SelectRows
+            )
 
             conflicts_to_show = [
                 c for c in self.report.conflicts
-                if c.conflict_type in (ConflictType.CONFLICT,)
+                if c.conflict_type == ConflictType.CONFLICT
             ]
             self._table.setRowCount(len(conflicts_to_show))
 
             for i, c in enumerate(conflicts_to_show):
-                self._table.setItem(i, 0, QTableWidgetItem(str(c.nid)))
-                self._table.setItem(i, 1, QTableWidgetItem(c.conflict_type.value))
+                self._table.setItem(
+                    i, 0, QTableWidgetItem(str(c.nid))
+                )
+                self._table.setItem(
+                    i, 1, QTableWidgetItem(c.conflict_type.value)
+                )
 
                 action_btn = QPushButton("Choose...", self._table)
-                action_btn.clicked.connect(lambda _, idx=i: self._show_choice_menu(idx))
+                action_btn.clicked.connect(
+                    lambda _, idx=i: self._show_choice_menu(idx)
+                )
                 self._table.setCellWidget(i, 2, action_btn)
 
             self._table.resizeColumnsToContents()
@@ -58,27 +66,40 @@ class ConflictResolutionDialog(QDialog):
             bulk_group = QGroupBox("Bulk Actions", self)
             bulk_layout = QHBoxLayout(bulk_group)
             keep_anki_btn = QPushButton("Keep All Anki", self)
-            keep_anki_btn.clicked.connect(lambda: self._resolve_all("anki"))
+            keep_anki_btn.clicked.connect(
+                lambda: self._resolve_all("anki")
+            )
             keep_git_btn = QPushButton("Keep All Git", self)
-            keep_git_btn.clicked.connect(lambda: self._resolve_all("git"))
+            keep_git_btn.clicked.connect(
+                lambda: self._resolve_all("git")
+            )
             bulk_layout.addWidget(keep_anki_btn)
             bulk_layout.addWidget(keep_git_btn)
             layout.addWidget(bulk_group)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok
+            | QDialogButtonBox.StandardButton.Cancel,
+            self,
+        )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     def _show_choice_menu(self, row: int):
         conflicts_to_show = [
-            c for c in self.report.conflicts if c.conflict_type in (ConflictType.CONFLICT,)
+            c for c in self.report.conflicts
+            if c.conflict_type == ConflictType.CONFLICT
         ]
         c = conflicts_to_show[row]
         menu = QMenu(self)
         anki_action = menu.addAction("Keep Anki Version")
         git_action = menu.addAction("Keep Git Version")
-        chosen = menu.exec(self._table.cellWidget(row, 2).mapToGlobal(self._table.cellWidget(row, 2).rect().center()))
+        chosen = menu.exec(
+            self._table.cellWidget(row, 2).mapToGlobal(
+                self._table.cellWidget(row, 2).rect().center()
+            )
+        )
         if chosen == anki_action:
             c.resolution = "anki"
             c.resolved = True
@@ -89,10 +110,16 @@ class ConflictResolutionDialog(QDialog):
             self._table.cellWidget(row, 2).setText("Git")
 
     def _resolve_all(self, choice: str):
-        for c in self.report.conflicts:
-            c.resolution = choice
-            c.resolved = True
-        self.accept()
+        """Mark all conflicts as resolved with the given choice.
 
-    def get_resolved(self) -> List[NoteConflict]:
-        return [c for c in self.report.conflicts if c.resolved]
+        Does NOT call accept() — lets the user review and click OK.
+        """
+        for c in self.report.conflicts:
+            if c.conflict_type == ConflictType.CONFLICT:
+                c.resolution = choice
+                c.resolved = True
+        # Update the table UI to reflect choices
+        for row in range(self._table.rowCount()):
+            btn = self._table.cellWidget(row, 2)
+            if btn:
+                btn.setText("Anki" if choice == "anki" else "Git")

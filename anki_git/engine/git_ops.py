@@ -4,9 +4,23 @@ from pathlib import Path
 from typing import Optional
 from datetime import timezone
 
-from git import Repo, GitCommandError
+from git import Repo, GitCommandError, InvalidGitRepositoryError
 
 _logger = logging.getLogger("anki_git")
+
+
+def validate_repo_path(repo_path: Path) -> bool:
+    """Validate that repo_path is a reasonable directory path.
+
+    Returns True if the path looks valid (doesn't verify git init state).
+    """
+    if not str(repo_path).strip():
+        return False
+    resolved = repo_path.resolve()
+    if resolved.exists() and not resolved.is_dir():
+        _logger.error("Repo path exists but is not a directory: %s", repo_path)
+        return False
+    return True
 
 
 def init_repo(repo_path: Path) -> Repo:
@@ -18,11 +32,13 @@ def init_repo(repo_path: Path) -> Repo:
 def open_repo(repo_path: Path) -> Optional[Repo]:
     try:
         return Repo(repo_path)
-    except (GitCommandError, Exception):
+    except (InvalidGitRepositoryError, GitCommandError, Exception):
         return None
 
 
 def get_or_init_repo(repo_path: Path) -> Repo:
+    if not validate_repo_path(repo_path):
+        raise ValueError(f"Invalid repository path: {repo_path}")
     repo = open_repo(repo_path)
     if repo is None:
         repo = init_repo(repo_path)
@@ -52,11 +68,16 @@ def create_snapshot_commit(
     changed_notetypes: list,
     collection_path: str,
 ) -> None:
-    deck_lines = ", ".join(f"{d} ({n} notes)" for d, n in changed_decks.items())
+    deck_lines = ", ".join(
+        f"{d} ({n} notes)" for d, n in changed_decks.items()
+    )
     nt_lines = ", ".join(changed_notetypes)
-    timestamp = datetime.datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    timestamp = datetime.datetime.now(timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     message = (
-        f"snapshot: {notes_changed} notes changed, {notetypes_changed} notetypes updated\n"
+        f"snapshot: {notes_changed} notes changed, "
+        f"{notetypes_changed} notetypes updated\n"
         f"\n"
         f"Changed decks: {deck_lines}\n"
         f"Changed notetypes: {nt_lines}\n"
@@ -81,7 +102,7 @@ def push_to_remote(repo: Repo, remote_url: str) -> None:
             remote = repo.create_remote("origin", remote_url)
 
         remote.push(refspec="main:main")
-    except Exception as e:
+    except Exception:
         _logger.exception("Failed to push to remote")
         raise
 

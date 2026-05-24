@@ -64,8 +64,8 @@ def test_note_diff_diff_lines_format():
     nd = compute_note_diff(old, new)
     assert len(nd.field_diffs) == 1
     lines = nd.field_diffs[0].diff_lines
-    assert any(l.startswith("-Hello") for l in lines)
-    assert any(l.startswith("+Hello World") for l in lines)
+    assert any(line.startswith("-Hello") for line in lines)
+    assert any(line.startswith("+Hello World") for line in lines)
 
 
 def test_notetype_diff_no_changes():

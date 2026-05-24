@@ -1,4 +1,3 @@
-import datetime
 import logging
 import time
 from pathlib import Path
@@ -15,6 +14,7 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     get_commit_count,
 )
+from anki_git.engine import import_helpers
 from anki_git.formats.notetype_yaml import (
     Notetype,
     write_notetype,
@@ -36,6 +36,7 @@ class ExportResult:
         self,
         notes_changed: int = 0,
         notetypes_changed: int = 0,
+        notes_deleted_from_repo: int = 0,
         changed_decks: Dict[str, int] = None,
         changed_notetypes: List[str] = None,
         error: str = "",
@@ -44,6 +45,7 @@ class ExportResult:
     ):
         self.notes_changed = notes_changed
         self.notetypes_changed = notetypes_changed
+        self.notes_deleted_from_repo = notes_deleted_from_repo
         self.changed_decks = changed_decks or {}
         self.changed_notetypes = changed_notetypes or []
         self.error = error
@@ -157,10 +159,20 @@ def export_collection(
             for field_value in fields.values():
                 media_filenames.update(get_media_filenames_from_fields(field_value))
 
+    # Clean up stale repo files for deleted Anki notes
+    if progress_callback:
+        progress_callback("Cleaning up stale files...")
+    cleaned = import_helpers.cleanup_stale_repo_notes(col, repo_path)
+    if cleaned > 0:
+        result.notes_deleted_from_repo = cleaned
+
     if media_strategy != "none" and media_filenames:
         if progress_callback:
             progress_callback("Handling media files...")
-        col_media_dir = Path(col.media.dir()) if hasattr(col, "media") else col.path.parent / "collection.media"
+        col_media_dir = (
+            Path(col.media.dir()) if hasattr(col, "media")
+            else col.path.parent / "collection.media"
+        )
         repo_media_dir = repo_path / "media"
         strategy = MediaStrategy(media_strategy)
         handle_media(col_media_dir, repo_media_dir, strategy, media_filenames)
@@ -170,7 +182,7 @@ def export_collection(
     result.changed_notetypes = changed_notetypes
     result.changed_decks = {d: len(ns) for d, ns in notes_by_deck.items()}
 
-    if notes_changed > 0 or result.notetypes_changed > 0:
+    if notes_changed > 0 or result.notetypes_changed > 0 or cleaned > 0:
         if progress_callback:
             progress_callback("Committing changes...")
         meta["last_export_time"] = int(time.time())
@@ -178,12 +190,14 @@ def export_collection(
         meta["collection_path"] = str(col.path)
         save_meta(repo_path, meta)
 
-        changed_files.add(str((repo_path / META_DIR / "meta.json").relative_to(repo_path)))
+        changed_files.add(
+            str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
+        )
 
         stage_files(repo, list(changed_files))
         create_snapshot_commit(
             repo,
-            notes_changed=notes_changed,
+            notes_changed=notes_changed + cleaned,
             notetypes_changed=result.notetypes_changed,
             changed_decks=result.changed_decks,
             changed_notetypes=changed_notetypes,
@@ -204,6 +218,8 @@ def export_collection(
         result.notetypes_changed,
     )
     if progress_callback:
-        progress_callback(f"Snapshot complete ({result.duration_seconds:.1f}s)")
+        progress_callback(
+            f"Snapshot complete ({result.duration_seconds:.1f}s)"
+        )
 
     return result

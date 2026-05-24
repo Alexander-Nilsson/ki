@@ -18,24 +18,34 @@ def _import(name):
         return None
 
 
+def _apply_log_level():
+    """Apply the log_level from config to the anki_git logger."""
+    config = load_config()
+    level_name = config.log_level.upper()
+    level = getattr(logging, level_name, logging.INFO)
+    _logger.setLevel(level)
+
+
 # Setup file logging in the addon data directory
 def _setup_logging():
     from aqt import mw
     if mw is None or mw.addonManager is None:
         return
     addon_id = __name__.split(".")[0]
-    # Use Anki's standard addon data directory
     log_dir = Path(mw.addonManager.addonsFolder()) / addon_id / "user_files"
     try:
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "anki_git.log"
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
-        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        file_handler.setFormatter(
+            logging.Formatter(
+                '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+            )
+        )
         _logger.addHandler(file_handler)
-        _logger.setLevel(logging.DEBUG)
+        _apply_log_level()
         _logger.info("AnkiGit logger initialized. Logging to %s", log_path)
     except Exception as e:
-        # Fallback to console if directory is not writable
         print(f"AnkiGit: Could not setup file logging: {e}")
 
 
@@ -63,10 +73,13 @@ def load_config() -> KiSyncConfig:
 def save_config(config: KiSyncConfig) -> None:
     global _config
     _config = config
+    _apply_log_level()
     aqt = _import("aqt")
     if aqt is not None:
         try:
-            aqt.mw.addonManager.writeConfig(__name__.split(".")[0], config.to_dict())
+            aqt.mw.addonManager.writeConfig(
+                __name__.split(".")[0], config.to_dict()
+            )
         except Exception as e:
             _logger.warning("Failed to save config: %s", e)
 
@@ -81,7 +94,9 @@ def sync_action() -> None:
 
     if not config.repo_path:
         QMessageBox.warning(
-            mw, "AnkiGit", "Please set a repository path in Tools > AnkiGit > Settings first."
+            mw, "AnkiGit",
+            "Please set a repository path in "
+            "Tools > AnkiGit > Settings first."
         )
         return
 
@@ -113,14 +128,18 @@ def sync_action() -> None:
             return resolved_report[0]
 
         sync_mode = config.sync_mode
-        conflict_cb = conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
+        conflict_cb = (
+            conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
+        )
 
         return sync_collection(
             col,
             repo_path,
             sync_mode=sync_mode,
             conflict_callback=conflict_cb,
-            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+            remote_url=(
+                config.remote_url if config.auto_push_after_snapshot else ""
+            ),
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             ),
@@ -130,7 +149,9 @@ def sync_action() -> None:
     def on_sync_done(result):
         if result.error:
             _logger.error("Sync failed: %s", result.error)
-            QMessageBox.critical(mw, "AnkiGit Sync", f"Error: {result.error}")
+            QMessageBox.critical(
+                mw, "AnkiGit Sync", f"Error: {result.error}"
+            )
             return
 
         parts = []
@@ -139,17 +160,28 @@ def sync_action() -> None:
         if result.notes_imported:
             parts.append(f"Notes imported: {result.notes_imported}")
         if result.notetypes_exported:
-            parts.append(f"Notetypes exported: {result.notetypes_exported}")
+            parts.append(
+                f"Notetypes exported: {result.notetypes_exported}"
+            )
         if result.notetypes_imported:
-            parts.append(f"Notetypes imported: {result.notetypes_imported}")
+            parts.append(
+                f"Notetypes imported: {result.notetypes_imported}"
+            )
         if result.conflicts_resolved:
-            parts.append(f"Conflicts resolved: {result.conflicts_resolved}")
+            parts.append(
+                f"Conflicts resolved: {result.conflicts_resolved}"
+            )
         if result.conflicts_unresolved:
-            parts.append(f"Conflicts unresolved: {result.conflicts_unresolved}")
+            parts.append(
+                f"Conflicts unresolved: {result.conflicts_unresolved}"
+            )
         parts.append(f"Duration: {result.duration_seconds:.1f}s")
 
         if not parts:
-            QMessageBox.information(mw, "AnkiGit Sync", "No changes detected. Everything is in sync.")
+            QMessageBox.information(
+                mw, "AnkiGit Sync",
+                "No changes detected. Everything is in sync."
+            )
             return
 
         QMessageBox.information(mw, "AnkiGit Sync", "\n".join(parts))
@@ -176,7 +208,9 @@ def snapshot_action() -> None:
 
     if not config.repo_path:
         QMessageBox.warning(
-            mw, "AnkiGit", "Please set a repository path in Tools > AnkiGit > Settings first."
+            mw, "AnkiGit",
+            "Please set a repository path in "
+            "Tools > AnkiGit > Settings first."
         )
         return
 
@@ -194,12 +228,17 @@ def snapshot_action() -> None:
                 lambda: mw.progress.update(label=text)
             )
         )
-        _logger.info("Diff computed: %d notes, %d notetypes changed", len(report.note_diffs), len(report.notetype_diffs))
+        _logger.info(
+            "Diff computed: %d notes, %d notetypes changed",
+            len(report.note_diffs), len(report.notetype_diffs)
+        )
         if not report.has_changes:
             return report, None
 
         _logger.info("Converting report to UI data...")
-        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
+        mw.taskman.run_on_main(
+            lambda: mw.progress.update(label="Preparing preview...")
+        )
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
         _logger.info("UI data ready (%d items)", len(ui_data))
@@ -210,7 +249,10 @@ def snapshot_action() -> None:
         report, ui_data = result_tuple
         if not report.has_changes:
             _logger.info("No changes to export")
-            QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
+            QMessageBox.information(
+                mw, "AnkiGit",
+                "No changes detected. Nothing to export."
+            )
             return
 
         _logger.info("Opening DiffDialog...")
@@ -226,7 +268,11 @@ def snapshot_action() -> None:
             return export_collection(
                 col,
                 repo_path,
-                remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+                remote_url=(
+                    config.remote_url
+                    if config.auto_push_after_snapshot
+                    else ""
+                ),
                 progress_callback=lambda text: mw.taskman.run_on_main(
                     lambda: mw.progress.update(label=text)
                 ),
@@ -236,7 +282,9 @@ def snapshot_action() -> None:
         def on_export_done(result):
             if result.error:
                 _logger.error("Export failed: %s", result.error)
-                QMessageBox.critical(mw, "AnkiGit Snapshot", f"Error: {result.error}")
+                QMessageBox.critical(
+                    mw, "AnkiGit Snapshot", f"Error: {result.error}"
+                )
                 return
 
             msg = (
@@ -250,23 +298,31 @@ def snapshot_action() -> None:
 
         def on_export_failed(e):
             _logger.exception("Export operation failed")
-            QMessageBox.critical(mw, "AnkiGit", f"Snapshot failed: {e}")
+            QMessageBox.critical(
+                mw, "AnkiGit", f"Snapshot failed: {e}"
+            )
 
         QueryOp(
             parent=mw,
             op=do_export,
             success=on_export_done,
-        ).failure(on_export_failed).with_progress("Taking Snapshot...").run_in_background()
+        ).failure(on_export_failed).with_progress(
+            "Taking Snapshot..."
+        ).run_in_background()
 
     def on_diff_failed(e):
         _logger.exception("Failed to compute export diff")
-        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+        QMessageBox.critical(
+            mw, "AnkiGit", f"Failed to compute diff: {e}"
+        )
 
     QueryOp(
         parent=mw,
         op=get_diff_with_progress,
         success=on_diff_done,
-    ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
+    ).failure(on_diff_failed).with_progress(
+        "Reviewing Changes..."
+    ).run_in_background()
 
 
 def import_action() -> None:
@@ -281,7 +337,9 @@ def import_action() -> None:
 
     if not config.repo_path:
         QMessageBox.warning(
-            mw, "AnkiGit", "Please set a repository path in Tools > AnkiGit > Settings first."
+            mw, "AnkiGit",
+            "Please set a repository path in "
+            "Tools > AnkiGit > Settings first."
         )
         return
 
@@ -291,7 +349,10 @@ def import_action() -> None:
 
     repo_path = Path(config.repo_path)
     if not (repo_path / ".git").exists():
-        QMessageBox.warning(mw, "AnkiGit", "No Git repository found. Take a snapshot first.")
+        QMessageBox.warning(
+            mw, "AnkiGit",
+            "No Git repository found. Take a snapshot first."
+        )
         return
 
     def get_diff_with_progress(col):
@@ -304,7 +365,9 @@ def import_action() -> None:
         if not report.has_changes:
             return report, None
 
-        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
+        mw.taskman.run_on_main(
+            lambda: mw.progress.update(label="Preparing preview...")
+        )
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
         return report, ui_data
@@ -312,7 +375,10 @@ def import_action() -> None:
     def on_diff_done(result_tuple):
         report, ui_data = result_tuple
         if not report or not report.has_changes:
-            QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to import.")
+            QMessageBox.information(
+                mw, "AnkiGit",
+                "No changes detected. Nothing to import."
+            )
             return
 
         diff_dialog = DiffDialog(ui_data, mw)
@@ -321,7 +387,10 @@ def import_action() -> None:
 
         def do_import(col):
             col_path = Path(col.path)
-            backup_path = repo_path / ".ki" / "backups" / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+            backup_path = (
+                repo_path / ".ki" / "backups"
+                / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+            )
             backup_path.parent.mkdir(parents=True, exist_ok=True)
             backup_path.write_bytes(col_path.read_bytes())
 
@@ -348,7 +417,9 @@ def import_action() -> None:
         def on_import_done(result):
             if result.error:
                 _logger.error("Import failed: %s", result.error)
-                QMessageBox.critical(mw, "AnkiGit", f"Import failed: {result.error}")
+                QMessageBox.critical(
+                    mw, "AnkiGit", f"Import failed: {result.error}"
+                )
                 return
 
             msg = (
@@ -359,7 +430,9 @@ def import_action() -> None:
                 f"Notetypes created: {result.notetypes_created}"
             )
             if result.warnings:
-                _logger.warning("Import warnings: %s", result.warnings)
+                _logger.warning(
+                    "Import warnings: %s", result.warnings
+                )
                 msg += "\nWarnings:\n" + "\n".join(result.warnings[:5])
             if result.errors:
                 _logger.error("Import errors: %s", result.errors)
@@ -369,23 +442,31 @@ def import_action() -> None:
 
         def on_import_failed(e):
             _logger.exception("Import operation failed")
-            QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")
+            QMessageBox.critical(
+                mw, "AnkiGit", f"Import failed: {e}"
+            )
 
         QueryOp(
             parent=mw,
             op=do_import,
             success=on_import_done,
-        ).failure(on_import_failed).with_progress("Pulling from Repo...").run_in_background()
+        ).failure(on_import_failed).with_progress(
+            "Pulling from Repo..."
+        ).run_in_background()
 
     def on_diff_failed(e):
         _logger.exception("Failed to compute import diff")
-        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+        QMessageBox.critical(
+            mw, "AnkiGit", f"Failed to compute diff: {e}"
+        )
 
     QueryOp(
         parent=mw,
         op=get_diff_with_progress,
         success=on_diff_done,
-    ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
+    ).failure(on_diff_failed).with_progress(
+        "Reviewing Changes..."
+    ).run_in_background()
 
 
 def settings_action() -> None:
@@ -453,7 +534,9 @@ def on_profile_close() -> None:
             from aqt import mw
             if mw is not None and mw.col is not None:
                 repo_path = Path(config.repo_path)
-                mw.progress.start(label="Auto-snapshotting...", immediate=True)
+                mw.progress.start(
+                    label="Auto-snapshotting...", immediate=True
+                )
                 try:
                     export_collection(
                         mw.col, repo_path,
@@ -494,7 +577,10 @@ def _debounced_export() -> None:
         from aqt.operations import QueryOp
         QueryOp(
             parent=mw,
-            op=lambda col: export_collection(col, repo_path, media_strategy=config.media_strategy),
+            op=lambda col: export_collection(
+                col, repo_path,
+                media_strategy=config.media_strategy,
+            ),
             success=lambda _: None
         ).run_in_background()
     except Exception as e:

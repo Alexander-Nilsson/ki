@@ -1,18 +1,20 @@
 from dataclasses import dataclass, asdict
+from enum import StrEnum
 
 
-class SyncMode:
+class SyncMode(StrEnum):
     ALWAYS_ASK = "always_ask"
     PREFER_ANKI = "prefer_anki"
     PREFER_REPO = "prefer_repo"
     ACCEPT_ALL = "accept_all"
 
-    CHOICES = [
-        ("always_ask", "Always ask"),
-        ("prefer_anki", "Anki wins"),
-        ("prefer_repo", "Repo wins"),
-        ("accept_all", "Accept all (auto-resolve)"),
-    ]
+
+SYNC_MODE_CHOICES = [
+    (SyncMode.ALWAYS_ASK, "Always ask"),
+    (SyncMode.PREFER_ANKI, "Anki wins"),
+    (SyncMode.PREFER_REPO, "Repo wins"),
+    (SyncMode.ACCEPT_ALL, "Accept all (auto-resolve)"),
+]
 
 
 @dataclass
@@ -29,6 +31,8 @@ class KiSyncConfig:
 
     @classmethod
     def from_dict(cls, d: dict) -> "KiSyncConfig":
+        if d is None:
+            return cls()
         valid_keys = set(asdict(cls()).keys())
         filtered = {k: v for k, v in d.items() if k in valid_keys}
         return cls(**filtered)
