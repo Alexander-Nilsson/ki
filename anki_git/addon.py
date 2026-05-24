@@ -48,7 +48,8 @@ def save_config(config: KiSyncConfig) -> None:
 
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox, QApplication
-    from anki_git.ui import ProgressDialog
+    from anki_git.ui import ProgressDialog, DiffViewDialog
+    from anki_git.engine.diff import compute_export_diff
 
     config = load_config()
     from aqt import mw
@@ -64,6 +65,32 @@ def snapshot_action() -> None:
         return
 
     repo_path = Path(config.repo_path)
+
+    dialog = ProgressDialog("Reviewing Changes...", mw)
+    dialog.set_text("Computing differences...")
+    dialog.show()
+    QApplication.processEvents()
+    try:
+        report = compute_export_diff(mw.col, repo_path)
+    except Exception as e:
+        dialog.close()
+        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+        return
+    dialog.close()
+
+    if not report.has_changes:
+        QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
+        return
+
+    diff_dialog = DiffViewDialog(
+        report,
+        mw,
+        title="Changes to Export",
+        accept_label="Accept & Export",
+    )
+    if not diff_dialog.exec():
+        return
+
     dialog = ProgressDialog("Taking Snapshot...", mw)
     dialog.set_text("Exporting collection to Git repo...")
     dialog.show()
@@ -92,7 +119,8 @@ def snapshot_action() -> None:
             f"Snapshot complete.\n"
             f"Notes changed: {result.notes_changed}\n"
             f"Notetypes changed: {result.notetypes_changed}\n"
-            f"Total commits: {commit_count}"
+            f"Total commits: {commit_count}\n"
+            f"Duration: {result.duration_seconds:.1f}s"
         )
         QMessageBox.information(mw, "AnkiGit Snapshot", msg)
 
@@ -103,8 +131,9 @@ def snapshot_action() -> None:
 
 def import_action() -> None:
     from aqt.qt import QMessageBox, QApplication
-    from anki_git.ui import ProgressDialog, ConflictResolutionDialog
+    from anki_git.ui import ProgressDialog, ConflictResolutionDialog, DiffViewDialog
     from anki_git.engine.importer import pull_from_repo
+    from anki_git.engine.diff import compute_import_diff
 
     config = load_config()
     from aqt import mw
@@ -122,6 +151,31 @@ def import_action() -> None:
     repo_path = Path(config.repo_path)
     if not (repo_path / ".git").exists():
         QMessageBox.warning(mw, "AnkiGit", "No Git repository found. Take a snapshot first.")
+        return
+
+    dialog = ProgressDialog("Reviewing Changes...", mw)
+    dialog.set_text("Computing differences...")
+    dialog.show()
+    QApplication.processEvents()
+    try:
+        report = compute_import_diff(mw.col, repo_path)
+    except Exception as e:
+        dialog.close()
+        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+        return
+    dialog.close()
+
+    if not report.has_changes:
+        QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to import.")
+        return
+
+    diff_dialog = DiffViewDialog(
+        report,
+        mw,
+        title="Changes to Import",
+        accept_label="Accept & Import",
+    )
+    if not diff_dialog.exec():
         return
 
     dialog = ProgressDialog("Pulling from Repo...", mw)
