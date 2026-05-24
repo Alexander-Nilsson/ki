@@ -109,7 +109,7 @@ def export_collection(
     _nt_name_cache: Dict[int, str] = {}
 
     for i, nid in enumerate(nids):
-        if progress_callback and i % 100 == 0:
+        if progress_callback and i % 20 == 0:
             progress_callback(f"Processing notes... {i}/{total}")
         try:
             note_obj = col.get_note(nid)

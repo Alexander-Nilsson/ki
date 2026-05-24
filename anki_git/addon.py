@@ -47,9 +47,9 @@ def save_config(config: KiSyncConfig) -> None:
 
 
 def snapshot_action() -> None:
-    from aqt.qt import QMessageBox, QApplication
-    from anki_git.ui import ProgressDialog, DiffViewDialog
-    from anki_git.engine.diff import compute_export_diff
+    from aqt.qt import QMessageBox
+    from aqt.operations import QueryOp
+    from anki_git.ui import DiffDialog
 
     config = load_config()
     from aqt import mw
@@ -66,72 +66,61 @@ def snapshot_action() -> None:
 
     repo_path = Path(config.repo_path)
 
-    dialog = ProgressDialog("Reviewing Changes...", mw)
-    dialog.set_text("Computing differences...")
-    dialog.show()
-    QApplication.processEvents()
-    try:
-        report = compute_export_diff(mw.col, repo_path)
-    except Exception as e:
-        dialog.close()
-        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
-        return
-    dialog.close()
-
-    if not report.has_changes:
-        QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
-        return
-
-    diff_dialog = DiffViewDialog(
-        report,
-        mw,
-        title="Changes to Export",
-        accept_label="Accept & Export",
-    )
-    if not diff_dialog.exec():
-        return
-
-    dialog = ProgressDialog("Taking Snapshot...", mw)
-    dialog.set_text("Exporting collection to Git repo...")
-    dialog.show()
-    QApplication.processEvents()
-
-    def progress(text: str) -> None:
-        dialog.set_text(text)
-        QApplication.processEvents()
-
-    try:
-        result = export_collection(
-            mw.col, repo_path,
-            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
-            progress_callback=progress,
-            media_strategy=config.media_strategy,
-        )
-        dialog.close()
-
-        if result.error:
-            QMessageBox.critical(mw, "AnkiGit Snapshot", f"Error: {result.error}")
+    def on_diff_done(report):
+        if not report.has_changes:
+            QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to export.")
             return
 
-        repo = get_or_init_repo(repo_path)
-        commit_count = get_commit_count(repo)
-        msg = (
-            f"Snapshot complete.\n"
-            f"Notes changed: {result.notes_changed}\n"
-            f"Notetypes changed: {result.notetypes_changed}\n"
-            f"Total commits: {commit_count}\n"
-            f"Duration: {result.duration_seconds:.1f}s"
-        )
-        QMessageBox.information(mw, "AnkiGit Snapshot", msg)
+        diff_dialog = DiffDialog.from_report(report, mw)
+        if not diff_dialog.exec():
+            return
 
-    except Exception as e:
-        dialog.close()
-        QMessageBox.critical(mw, "AnkiGit Snapshot", f"Snapshot failed: {e}")
+        def do_export(col):
+            return export_collection(
+                col, repo_path,
+                remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+                progress_callback=lambda text: mw.taskman.run_on_main(
+                    lambda: mw.progress.update(label=text, type="sticky")
+                ),
+                media_strategy=config.media_strategy,
+            )
+
+        def on_export_done(result):
+            if result.error:
+                QMessageBox.critical(mw, "AnkiGit Snapshot", f"Error: {result.error}")
+                return
+
+            repo = get_or_init_repo(repo_path)
+            commit_count = get_commit_count(repo)
+            msg = (
+                f"Snapshot complete.\n"
+                f"Notes changed: {result.notes_changed}\n"
+                f"Notetypes changed: {result.notetypes_changed}\n"
+                f"Total commits: {commit_count}\n"
+                f"Duration: {result.duration_seconds:.1f}s"
+            )
+            QMessageBox.information(mw, "AnkiGit Snapshot", msg)
+
+        QueryOp(
+            parent=mw,
+            op=do_export,
+            success=on_export_done,
+        ).failure(lambda e: QMessageBox.critical(mw, "AnkiGit", f"Snapshot failed: {e}")).with_progress("Taking Snapshot...").run_in_background()
+
+    def on_diff_failed(e):
+        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+
+    QueryOp(
+        parent=mw,
+        op=lambda col: compute_export_diff(col, repo_path),
+        success=on_diff_done,
+    ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
 
 
 def import_action() -> None:
-    from aqt.qt import QMessageBox, QApplication
-    from anki_git.ui import ProgressDialog, ConflictResolutionDialog, DiffViewDialog
+    from aqt.qt import QMessageBox
+    from aqt.operations import QueryOp
+    from anki_git.ui import ConflictResolutionDialog, DiffDialog
     from anki_git.engine.importer import pull_from_repo
     from anki_git.engine.diff import compute_import_diff
 
@@ -153,78 +142,68 @@ def import_action() -> None:
         QMessageBox.warning(mw, "AnkiGit", "No Git repository found. Take a snapshot first.")
         return
 
-    dialog = ProgressDialog("Reviewing Changes...", mw)
-    dialog.set_text("Computing differences...")
-    dialog.show()
-    QApplication.processEvents()
-    try:
-        report = compute_import_diff(mw.col, repo_path)
-    except Exception as e:
-        dialog.close()
+    def on_diff_done(report):
+        if not report.has_changes:
+            QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to import.")
+            return
+
+        diff_dialog = DiffDialog.from_report(report, mw)
+        if not diff_dialog.exec():
+            return
+
+        def do_import(col):
+            col_path = Path(col.path)
+            backup_path = repo_path / ".ki" / "backups" / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path.write_bytes(col_path.read_bytes())
+
+            import threading
+            def handle_conflicts_bg(report):
+                event = threading.Event()
+                resolved = [report]
+                def on_main():
+                    diag = ConflictResolutionDialog(report, mw)
+                    if diag.exec():
+                        resolved[0] = diag.resolved_report
+                    event.set()
+                mw.taskman.run_on_main(on_main)
+                event.wait()
+                return resolved[0]
+
+            return pull_from_repo(
+                col, repo_path,
+                conflict_callback=handle_conflicts_bg,
+            )
+
+        def on_import_done(result):
+            msg = (
+                f"Import complete.\n"
+                f"Notes updated: {result.notes_updated}\n"
+                f"Notes created: {result.notes_created}\n"
+                f"Notetypes updated: {result.notetypes_updated}\n"
+                f"Notetypes created: {result.notetypes_created}"
+            )
+            if result.warnings:
+                msg += "\nWarnings:\n" + "\n".join(result.warnings[:5])
+            if result.errors:
+                msg += "\nErrors:\n" + "\n".join(result.errors[:5])
+            QMessageBox.information(mw, "AnkiGit Import", msg)
+            mw.reset()
+
+        QueryOp(
+            parent=mw,
+            op=do_import,
+            success=on_import_done,
+        ).failure(lambda e: QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")).with_progress("Pulling from Repo...").run_in_background()
+
+    def on_diff_failed(e):
         QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
-        return
-    dialog.close()
 
-    if not report.has_changes:
-        QMessageBox.information(mw, "AnkiGit", "No changes detected. Nothing to import.")
-        return
-
-    diff_dialog = DiffViewDialog(
-        report,
-        mw,
-        title="Changes to Import",
-        accept_label="Accept & Import",
-    )
-    if not diff_dialog.exec():
-        return
-
-    dialog = ProgressDialog("Pulling from Repo...", mw)
-    dialog.set_text("Analyzing collection and repo...")
-    dialog.show()
-    QApplication.processEvents()
-
-    def progress(text: str) -> None:
-        dialog.set_text(text)
-        QApplication.processEvents()
-
-    def handle_conflicts(report):
-        dialog.close()
-        report_dialog = ConflictResolutionDialog(report, mw)
-        if report_dialog.exec():
-            return report_dialog.resolved_report
-        return report
-
-    try:
-        col_path = Path(mw.col.path)
-        backup_path = repo_path / ".ki" / "backups" / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
-        backup_path.parent.mkdir(parents=True, exist_ok=True)
-        backup_path.write_bytes(col_path.read_bytes())
-        progress("Backup created.")
-
-        progress("Computing checksums and detecting conflicts...")
-        result = pull_from_repo(
-            mw.col, repo_path,
-            conflict_callback=handle_conflicts,
-        )
-        dialog.close()
-
-        msg = (
-            f"Import complete.\n"
-            f"Notes updated: {result.notes_updated}\n"
-            f"Notes created: {result.notes_created}\n"
-            f"Notetypes updated: {result.notetypes_updated}\n"
-            f"Notetypes created: {result.notetypes_created}"
-        )
-        if result.warnings:
-            msg += "\nWarnings:\n" + "\n".join(result.warnings[:5])
-        if result.errors:
-            msg += "\nErrors:\n" + "\n".join(result.errors[:5])
-        QMessageBox.information(mw, "AnkiGit Import", msg)
-
-    except Exception as e:
-        dialog.close()
-        _logger.error("Import failed: %s", e)
-        QMessageBox.critical(mw, "AnkiGit Import", f"Import failed: {e}")
+    QueryOp(
+        parent=mw,
+        op=lambda col: compute_import_diff(col, repo_path),
+        success=on_diff_done,
+    ).failure(on_diff_failed).with_progress("Reviewing Changes...").run_in_background()
 
 
 def settings_action() -> None:
@@ -288,7 +267,18 @@ def on_profile_close() -> None:
             from aqt import mw
             if mw is not None and mw.col is not None:
                 repo_path = Path(config.repo_path)
-                export_collection(mw.col, repo_path, media_strategy=config.media_strategy)
+                mw.progress.start(label="Auto-snapshotting...", immediate=True)
+                try:
+                    export_collection(
+                        mw.col, repo_path,
+                        media_strategy=config.media_strategy,
+                        progress_callback=lambda text: (
+                            mw.progress.update(label=text),
+                            mw.app.processEvents()
+                        )
+                    )
+                finally:
+                    mw.progress.finish()
         except Exception as e:
             _logger.warning("Auto-snapshot on close failed: %s", e)
 
@@ -315,7 +305,12 @@ def _debounced_export() -> None:
         return
     try:
         repo_path = Path(config.repo_path)
-        export_collection(mw.col, repo_path, media_strategy=config.media_strategy)
+        from aqt.operations import QueryOp
+        QueryOp(
+            parent=mw,
+            op=lambda col: export_collection(col, repo_path, media_strategy=config.media_strategy),
+            success=lambda _: None
+        ).run_in_background()
     except Exception as e:
         _logger.warning("Debounced export failed: %s", e)
 

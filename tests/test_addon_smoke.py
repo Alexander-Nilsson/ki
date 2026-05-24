@@ -230,7 +230,7 @@ class TestUiAgainstEngine:
         _ = QApplication.instance() or QApplication([])
 
         from anki_git.engine.diff import DiffReport, NoteDiff, FieldDiff, NotetypeDiff
-        from anki_git.ui.diff import DiffViewDialog
+        from anki_git.ui.diff import DiffDialog
 
         nd = NoteDiff(
             nid=42,
@@ -252,7 +252,7 @@ class TestUiAgainstEngine:
         )
         report = DiffReport(note_diffs=[nd], notetype_diffs=[ntd])
 
-        dialog = DiffViewDialog(report)
+        dialog = DiffDialog.from_report(report)
         assert dialog is not None
 
     def test_diff_view_dialog_with_export(self, anki_session, tmp_path):
@@ -263,7 +263,7 @@ class TestUiAgainstEngine:
 
         from anki_git.engine.exporter import export_collection
         from anki_git.engine.diff import compute_export_diff
-        from anki_git.ui.diff import DiffViewDialog
+        from anki_git.ui.diff import DiffDialog
 
         col = anki_session.collection
 
@@ -284,5 +284,5 @@ class TestUiAgainstEngine:
 
         assert report.has_changes
 
-        dialog = DiffViewDialog(report)
+        dialog = DiffDialog.from_report(report)
         assert dialog is not None
