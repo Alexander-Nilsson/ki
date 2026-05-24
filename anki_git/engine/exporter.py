@@ -86,18 +86,11 @@ def export_collection(
     changed_files: Set[str] = set()
     for name, nt in current_notetypes.items():
         old = old_notetypes.get(name)
-        try:
-            old_yaml = "\n".join(old.to_yaml_lines()) if old else ""
-        except Exception:
-            old_yaml = ""
-        new_yaml = "\n".join(nt.to_yaml_lines())
-        if old_yaml != new_yaml:
+        if nt != old:
             changed_notetypes.append(name)
             write_notetype(notetypes_dir, nt)
-            yaml_path, css_path = notetype_paths(notetypes_dir, name)
-            changed_files.add(str(yaml_path.relative_to(repo_path)))
-            if nt.css or css_path.exists():
-                changed_files.add(str(css_path.relative_to(repo_path)))
+            for p in notetype_paths(notetypes_dir, name):
+                changed_files.add(str(p.relative_to(repo_path)))
 
     meta_checksums = meta.get("note_checksums", {})
 

@@ -1,6 +1,8 @@
-"""Tests for notetype YAML serialization/deserialization."""
+"""Tests for notetype directory serialization/deserialization."""
+import json
 from pathlib import Path
 import tempfile
+import shutil
 
 from anki_git.formats.notetype_yaml import (
     Notetype,
@@ -9,6 +11,8 @@ from anki_git.formats.notetype_yaml import (
     write_notetype,
     read_notetype,
     read_all_notetypes,
+    notetype_dir_path,
+    notetype_paths,
 )
 
 
@@ -16,8 +20,8 @@ BASIC_NT = Notetype(
     name="Basic",
     id=1234567890,
     fields=[
-        NotetypeField(name="Front", ord=0),
-        NotetypeField(name="Back", ord=1),
+        NotetypeField(name="Front", ord=0, nt_id=1001),
+        NotetypeField(name="Back", ord=1, nt_id=1002),
     ],
     templates=[
         NotetypeTemplate(
@@ -25,6 +29,7 @@ BASIC_NT = Notetype(
             ord=0,
             qfmt="{{Front}}",
             afmt="{{FrontSide}}\n\n<hr id=answer>\n\n{{Back}}",
+            nt_id=2001,
         ),
     ],
     css=".card { font-family: arial; font-size: 20px; }",
@@ -32,13 +37,12 @@ BASIC_NT = Notetype(
     type=0,
 )
 
-
 CLOZE_NT = Notetype(
     name="Cloze",
     id=9876543210,
     fields=[
-        NotetypeField(name="Text", ord=0, font="Arial", size=20),
-        NotetypeField(name="Extra", ord=1, font="Arial", size=20),
+        NotetypeField(name="Text", ord=0, font="Arial", size=20, nt_id=1003),
+        NotetypeField(name="Extra", ord=1, font="Arial", size=20, nt_id=1004),
     ],
     templates=[
         NotetypeTemplate(
@@ -46,6 +50,7 @@ CLOZE_NT = Notetype(
             ord=0,
             qfmt="{{cloze:Text}}",
             afmt="{{cloze:Text}}<br>\n{{Extra}}",
+            nt_id=2002,
         ),
     ],
     css=".card { font-family: arial; font-size: 20px; }\n.cloze { font-weight: bold; color: blue; }",
@@ -54,117 +59,109 @@ CLOZE_NT = Notetype(
 )
 
 
-def test_round_trip_basic():
-    lines = BASIC_NT.to_yaml_lines()
-    nt2 = Notetype.from_yaml_lines(lines)
-    assert nt2.name == "Basic"
-    assert nt2.id == 1234567890
-    assert len(nt2.fields) == 2
-    assert nt2.fields[0].name == "Front"
-    assert nt2.fields[0].ord == 0
-    assert nt2.fields[1].name == "Back"
-    assert nt2.fields[1].ord == 1
-    assert len(nt2.templates) == 1
-    assert nt2.templates[0].name == "Card 1"
-    assert "{{Front}}" in nt2.templates[0].qfmt
-    assert nt2.css == ".card { font-family: arial; font-size: 20px; }"
-    assert nt2.sort_field == 0
-    assert nt2.type == 0
-
-
-def test_round_trip_cloze():
-    lines = CLOZE_NT.to_yaml_lines()
-    nt2 = Notetype.from_yaml_lines(lines)
-    assert nt2.name == "Cloze"
-    assert nt2.type == 1
-    assert len(nt2.fields) == 2
-    assert nt2.fields[0].name == "Text"
-    assert "cloze" in nt2.templates[0].qfmt
-    assert "color: blue" in nt2.css
-
-
-def test_round_trip_preserves_css():
-    lines = BASIC_NT.to_yaml_lines()
-    nt2 = Notetype.from_yaml_lines(lines)
-    assert nt2.css == BASIC_NT.css
-
-
-def test_write_and_read_notetype_file():
+def test_write_and_read_notetype():
     with tempfile.TemporaryDirectory() as tmpdir:
-        notetypes_dir = Path(tmpdir) / "notetypes"
-        write_notetype(notetypes_dir, BASIC_NT)
+        notetypes_root = Path(tmpdir) / "notetypes"
+        write_notetype(notetypes_root, BASIC_NT)
 
-        yaml_path, css_path = notetypes_dir / "Basic.yaml", notetypes_dir / "Basic.css"
-        assert yaml_path.exists()
-        assert css_path.exists()
-        assert ".card {" in css_path.read_text(encoding="utf-8")
+        nt_dir = notetype_dir_path(notetypes_root, "Basic")
+        assert nt_dir.is_dir()
+        assert (nt_dir / "meta.json").exists()
+        assert (nt_dir / "fields.json").exists()
+        assert (nt_dir / "style.css").exists()
+        assert (nt_dir / "Card 1").is_dir()
+        assert (nt_dir / "Card 1" / "front.html").exists()
+        assert (nt_dir / "Card 1" / "back.html").exists()
 
-        nt = read_notetype(yaml_path)
+        meta = json.loads((nt_dir / "meta.json").read_text(encoding="utf-8"))
+        assert meta["name"] == "Basic"
+        assert meta["id"] == 1234567890
+        assert meta["type"] == 0
+
+        fields = json.loads((nt_dir / "fields.json").read_text(encoding="utf-8"))
+        assert len(fields) == 2
+        assert fields[0]["name"] == "Front"
+        assert fields[0]["id"] == 1001
+
+        templates = json.loads((nt_dir / "templates.json").read_text(encoding="utf-8"))
+        assert len(templates) == 1
+        assert templates[0]["name"] == "Card 1"
+        assert templates[0]["id"] == 2001
+
+        css = (nt_dir / "style.css").read_text(encoding="utf-8")
+        assert "font-family: arial" in css
+
+        front = (nt_dir / "Card 1" / "front.html").read_text(encoding="utf-8")
+        assert front == "{{Front}}"
+
+        back = (nt_dir / "Card 1" / "back.html").read_text(encoding="utf-8")
+        assert "{{FrontSide}}" in back
+
+
+def test_read_notetype():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        notetypes_root = Path(tmpdir) / "notetypes"
+        write_notetype(notetypes_root, BASIC_NT)
+
+        nt_dir = notetype_dir_path(notetypes_root, "Basic")
+        nt = read_notetype(nt_dir)
         assert nt is not None
         assert nt.name == "Basic"
+        assert nt.id == 1234567890
+        assert len(nt.fields) == 2
+        assert nt.fields[0].name == "Front"
+        assert nt.fields[0].id == 1001
+        assert nt.fields[1].name == "Back"
+        assert len(nt.templates) == 1
+        assert nt.templates[0].name == "Card 1"
+        assert nt.templates[0].qfmt == "{{Front}}"
+        assert nt.templates[0].id == 2001
         assert nt.css == BASIC_NT.css
+        assert nt.sort_field == 0
+        assert nt.type == 0
 
 
 def test_read_all_notetypes():
     with tempfile.TemporaryDirectory() as tmpdir:
-        notetypes_dir = Path(tmpdir) / "notetypes"
-        write_notetype(notetypes_dir, BASIC_NT)
-        write_notetype(notetypes_dir, CLOZE_NT)
+        notetypes_root = Path(tmpdir) / "notetypes"
+        write_notetype(notetypes_root, BASIC_NT)
+        write_notetype(notetypes_root, CLOZE_NT)
 
-        notetypes = read_all_notetypes(notetypes_dir)
+        notetypes = read_all_notetypes(notetypes_root)
         assert len(notetypes) == 2
         assert "Basic" in notetypes
         assert "Cloze" in notetypes
 
 
-def test_js_heavy_template_roundtrip():
-    """Templates with JS containing single quotes and newlines must round-trip."""
-    afmt = """{{FrontSide}}
-
-<script>
-let l = document.querySelectorAll('.prettify-tags > *');
-if (tag) { }
-</script>"""
-    nt = Notetype(
-        name="JS_Heavy",
-        id=999,
-        fields=[NotetypeField(name="Front", ord=0)],
-        templates=[
-            NotetypeTemplate(
-                name="Card 1",
-                ord=0,
-                qfmt="{{Front}}",
-                afmt=afmt,
-            ),
-        ],
-        css=".card { }",
+def test_notetype_equality():
+    nt1 = Notetype(
+        name="Test", id=1,
+        fields=[NotetypeField(name="F", ord=0)],
+        templates=[NotetypeTemplate(name="C1", ord=0, qfmt="{{F}}", afmt="{{F}}")],
+        css=".card {}",
     )
-    lines = nt.to_yaml_lines()
-    nt2 = Notetype.from_yaml_lines(lines)
-    assert nt2.templates[0].afmt == afmt
-    assert nt2.templates[0].qfmt == "{{Front}}"
-
-
-def test_template_with_tabs_and_quotes_roundtrip():
-    """Templates with tabs (forces double-quoted YAML mode) must round-trip."""
-    afmt = "{{FrontSide}}\n\n<script>\nlet el = document.querySelectorAll(\"\t.prettify-tags > *\");\nif (el) { el.innerHTML = \"test\"; }\n</script>"
-    nt = Notetype(
-        name="Tabs_And_Quotes",
-        id=888,
-        fields=[NotetypeField(name="Front", ord=0)],
-        templates=[
-            NotetypeTemplate(
-                name="Card 1",
-                ord=0,
-                qfmt="{{Front}}",
-                afmt=afmt,
-            ),
-        ],
-        css=".card { }",
+    nt2 = Notetype(
+        name="Test", id=1,
+        fields=[NotetypeField(name="F", ord=0)],
+        templates=[NotetypeTemplate(name="C1", ord=0, qfmt="{{F}}", afmt="{{F}}")],
+        css=".card {}",
     )
-    lines = nt.to_yaml_lines()
-    nt2 = Notetype.from_yaml_lines(lines)
-    assert nt2.templates[0].afmt == afmt
+    assert nt1 == nt2
+
+
+def test_notetype_paths():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        notetypes_root = Path(tmpdir) / "notetypes"
+        write_notetype(notetypes_root, BASIC_NT)
+
+        paths = notetype_paths(notetypes_root, "Basic")
+        filenames = {p.name for p in paths}
+        assert "meta.json" in filenames
+        assert "fields.json" in filenames
+        assert "templates.json" in filenames
+        assert "style.css" in filenames
+        assert any("front.html" in str(p) for p in paths)
+        assert any("back.html" in str(p) for p in paths)
 
 
 def test_from_anki_dict():
@@ -172,11 +169,11 @@ def test_from_anki_dict():
         "name": "Basic",
         "id": 1234567890,
         "flds": [
-            {"name": "Front", "ord": 0, "font": "Arial", "size": 20, "sticky": False},
-            {"name": "Back", "ord": 1, "font": "Arial", "size": 20, "sticky": False},
+            {"name": "Front", "ord": 0, "font": "Arial", "size": 20, "sticky": False, "id": 1001},
+            {"name": "Back", "ord": 1, "font": "Arial", "size": 20, "sticky": False, "id": 1002},
         ],
         "tmpls": [
-            {"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{FrontSide}}"},
+            {"name": "Card 1", "ord": 0, "qfmt": "{{Front}}", "afmt": "{{FrontSide}}", "id": 2001},
         ],
         "css": ".card { }",
         "sortf": 0,
@@ -186,5 +183,7 @@ def test_from_anki_dict():
     assert nt.name == "Basic"
     assert nt.id == 1234567890
     assert len(nt.fields) == 2
+    assert nt.fields[0].id == 1001
     assert len(nt.templates) == 1
+    assert nt.templates[0].id == 2001
     assert nt.sort_field == 0

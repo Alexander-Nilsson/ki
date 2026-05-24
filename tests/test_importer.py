@@ -39,10 +39,12 @@ def test_preview_import_counts_notes(tmp_path):
 
 
 def test_preview_import_counts_notetypes(tmp_path):
-    notetypes_dir = tmp_path / "notetypes"
-    notetypes_dir.mkdir(parents=True)
-    yaml_file = notetypes_dir / "Basic.yaml"
-    yaml_file.write_text("name: Basic\nid: 1\nfields: []\ntemplates: []\ncss: ''\n", encoding="utf-8")
+    import json
+    notetypes_root = tmp_path / "notetypes"
+    nt_dir = notetypes_root / "Basic"
+    nt_dir.mkdir(parents=True)
+    (nt_dir / "meta.json").write_text(json.dumps({"name": "Basic", "id": 1}), encoding="utf-8")
+    (nt_dir / "fields.json").write_text("[]", encoding="utf-8")
     result = preview_import(tmp_path)
     assert result.notetypes_created == 1
 
@@ -202,12 +204,19 @@ def test_import_from_repo_malformed(tmp_path, anki_session):
 
     # Set up repo with a valid notetype and a mix of valid/malformed notes
     repo = tmp_path / "repo"
-    notetypes_dir = repo / "notetypes"
-    notetypes_dir.mkdir(parents=True)
-    (notetypes_dir / "Basic.yaml").write_text(
-        "name: Basic\nid: 1\nfields:\n  - {name: Front, ord: 0}\n  - {name: Back, ord: 1}\ntemplates:\n  - {name: 'Card 1', ord: 0, qfmt: '{{Front}}', afmt: '{{Back}}'}\ncss: ''\n",
-        encoding="utf-8",
-    )
+    import json
+    notetypes_root = repo / "notetypes"
+    nt_dir = notetypes_root / "Basic"
+    nt_dir.mkdir(parents=True)
+    (nt_dir / "meta.json").write_text(json.dumps({"name": "Basic", "id": 1}), encoding="utf-8")
+    (nt_dir / "fields.json").write_text(json.dumps([
+        {"name": "Front", "ord": 0},
+        {"name": "Back", "ord": 1},
+    ]), encoding="utf-8")
+    card_dir = nt_dir / "Card 1"
+    card_dir.mkdir()
+    (card_dir / "front.html").write_text("{{Front}}", encoding="utf-8")
+    (card_dir / "back.html").write_text("{{Back}}", encoding="utf-8")
     decks_dir = repo / "decks" / "Default"
     decks_dir.mkdir(parents=True)
 

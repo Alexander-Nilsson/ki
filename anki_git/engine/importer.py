@@ -156,11 +156,12 @@ def _import_notetypes(col, repo_path: Path, result: ImportResult) -> None:
                     "size": f.size,
                     "sticky": f.sticky,
                     "rtl": f.rtl,
+                    "id": f.id,
                 }
                 for f in nt.fields
             ]
             existing["tmpls"] = [
-                {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt}
+                {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt, "id": t.id}
                 for t in nt.templates
             ]
             existing["css"] = nt.css

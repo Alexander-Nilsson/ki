@@ -112,21 +112,23 @@ class TestEngineAgainstCollection:
         assert r2.notes_changed == 0
         assert r2.notetypes_changed == 0
 
-    def test_notetype_yaml_roundtrip(self, anki_session, tmp_path):
+    def test_notetype_dir_roundtrip(self, anki_session, tmp_path):
         from anki_git.formats.notetype_yaml import (
             Notetype,
             write_notetype,
             read_notetype,
+            notetype_dir_path,
         )
 
         col = anki_session.collection
         nt_dict = col.models.by_name("Basic")
         nt = Notetype.from_anki_dict(nt_dict)
 
-        notetypes_dir = tmp_path / "notetypes"
-        write_notetype(notetypes_dir, nt)
+        notetypes_root = tmp_path / "notetypes"
+        write_notetype(notetypes_root, nt)
 
-        loaded = read_notetype(notetypes_dir / "Basic.yaml")
+        nt_dir = notetype_dir_path(notetypes_root, "Basic")
+        loaded = read_notetype(nt_dir)
         assert loaded is not None
         assert loaded.name == "Basic"
         assert len(loaded.fields) == len(nt.fields)
@@ -140,6 +142,7 @@ class TestEngineAgainstCollection:
             NotetypeTemplate,
             write_notetype,
             read_notetype,
+            notetype_dir_path,
         )
 
         nt = Notetype(
@@ -162,9 +165,10 @@ if (el) { el.innerHTML = 'test'; }
             css=".card { font-family: arial; }",
         )
 
-        notetypes_dir = tmp_path / "notetypes"
-        write_notetype(notetypes_dir, nt)
-        loaded = read_notetype(notetypes_dir / "JS_Test.yaml")
+        notetypes_root = tmp_path / "notetypes"
+        write_notetype(notetypes_root, nt)
+        nt_dir = notetype_dir_path(notetypes_root, "JS_Test")
+        loaded = read_notetype(nt_dir)
         assert loaded is not None
         assert loaded.templates[0].afmt == nt.templates[0].afmt
         assert loaded.templates[0].qfmt == nt.templates[0].qfmt

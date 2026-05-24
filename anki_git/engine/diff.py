@@ -163,6 +163,21 @@ def compute_note_diff(old_note: Optional[Note], new_note: Note) -> NoteDiff:
     )
 
 
+def _notetype_to_canonical(nt) -> dict:
+    return {
+        "name": nt.name,
+        "id": nt.id,
+        "fields": [
+            {"name": f.name, "ord": f.ord, "font": f.font, "size": f.size, "sticky": f.sticky, "rtl": f.rtl}
+            for f in nt.fields
+        ],
+        "templates": [
+            {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt}
+            for t in nt.templates
+        ],
+    }
+
+
 def compute_notetype_diff(
     old_nt: Optional[Notetype], new_nt: Notetype
 ) -> Optional[NotetypeDiff]:
@@ -172,12 +187,13 @@ def compute_notetype_diff(
     if new_nt is None:
         return NotetypeDiff(name=old_nt.name, change_type="deleted", fields_diff="(deleted notetype)")
 
-    old_yaml = "\n".join(old_nt.to_yaml_lines())
-    new_yaml = "\n".join(new_nt.to_yaml_lines())
-    if old_yaml == new_yaml and old_nt.css == new_nt.css:
+    import json
+    old_ser = json.dumps(_notetype_to_canonical(old_nt), indent=2, ensure_ascii=False, sort_keys=True)
+    new_ser = json.dumps(_notetype_to_canonical(new_nt), indent=2, ensure_ascii=False, sort_keys=True)
+    if old_ser == new_ser and old_nt.css == new_nt.css:
         return None
 
-    fields_diff = "\n".join(_unified_diff(old_yaml, new_yaml, f"{new_nt.name}.yaml"))
+    fields_diff = "\n".join(_unified_diff(old_ser, new_ser, f"{new_nt.name}.json"))
     css_diff = "\n".join(_unified_diff(old_nt.css, new_nt.css, f"{new_nt.name}.css")) if old_nt.css != new_nt.css else ""
 
     return NotetypeDiff(

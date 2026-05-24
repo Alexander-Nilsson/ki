@@ -21,6 +21,7 @@ from anki_git.engine.checksums import content_hash, load_meta, save_meta
 from anki_git.engine.conflict import (
     detect_conflicts,
     resolve_conflicts,
+    merge_notetypes,
 )
 from anki_git.engine.git_ops import (
     get_or_init_repo,
@@ -137,11 +138,11 @@ def _import_notetype(col, repo_path: Path, nt_name: str) -> bool:
     existing = col.models.by_name(nt_name)
     if existing:
         existing["flds"] = [
-            {"name": f.name, "ord": f.ord, "font": f.font, "size": f.size, "sticky": f.sticky, "rtl": f.rtl}
+            {"name": f.name, "ord": f.ord, "font": f.font, "size": f.size, "sticky": f.sticky, "rtl": f.rtl, "id": f.id}
             for f in nt.fields
         ]
         existing["tmpls"] = [
-            {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt}
+            {"name": t.name, "ord": t.ord, "qfmt": t.qfmt, "afmt": t.afmt, "id": t.id}
             for t in nt.templates
         ]
         existing["css"] = nt.css
@@ -185,15 +186,6 @@ def _export_single_note(col, repo_path: Path, nid: int) -> bool:
     serialized = note.serialize()
     write_note_file(note_dir, note, content=serialized)
     return True
-
-
-def _compute_notetype_checksums(notetypes_dir: Path) -> Dict[str, str]:
-    """Compute checksums for notetypes in the repo."""
-    checksums = {}
-    repo_nts = read_all_notetypes(notetypes_dir)
-    for name, nt in repo_nts.items():
-        checksums[name] = content_hash("\n".join(nt.to_yaml_lines()))
-    return checksums
 
 
 def sync_collection(
@@ -296,28 +288,34 @@ def sync_collection(
     if progress_callback:
         progress_callback("Syncing notetypes...")
 
-    # Compute notetype checksums from both sides
-    anki_nt_checksums: Dict[str, str] = {
-        name: content_hash("\n".join(nt.to_yaml_lines()))
-        for name, nt in anki_notetypes.items()
-    }
-    repo_nt_checksums = _compute_notetype_checksums(notetypes_dir)
+    repo_notetypes = read_all_notetypes(notetypes_dir)
+    all_nt_names = set(anki_notetypes) | set(repo_notetypes)
 
-    # Simple diff: if notetype exists only in Anki, export it; only in repo, import it
-    all_nt_names = set(list(anki_nt_checksums.keys()) + list(repo_nt_checksums.keys()))
-    for name in all_nt_names:
+    for name in sorted(all_nt_names):
         anki_nt = anki_notetypes.get(name)
-        repo_checksum = repo_nt_checksums.get(name)
-        anki_checksum = anki_nt_checksums.get(name)
+        git_nt = repo_notetypes.get(name)
 
-        if anki_nt and (repo_checksum is None or anki_checksum != repo_checksum):
-            write_notetype(notetypes_dir, anki_nt)
-            yaml_path, css_path = notetype_paths(notetypes_dir, name)
-            changed_files.add(str(yaml_path.relative_to(repo_path)))
-            if anki_nt.css or css_path.exists():
-                changed_files.add(str(css_path.relative_to(repo_path)))
+        if anki_nt and git_nt:
+            if anki_nt == git_nt:
+                continue
+            merged, nt_conflicts = merge_notetypes(anki_nt, git_nt, sync_mode)
+            write_notetype(notetypes_dir, merged)
+            for p in notetype_paths(notetypes_dir, name):
+                changed_files.add(str(p.relative_to(repo_path)))
+            _import_notetype(col, repo_path, name)
+            for c in nt_conflicts:
+                if c.resolved:
+                    result.conflicts_resolved += 1
+                else:
+                    result.conflicts_unresolved += 1
             result.notetypes_exported += 1
-        elif not anki_nt and repo_checksum is not None:
+            result.notetypes_imported += 1
+        elif anki_nt:
+            write_notetype(notetypes_dir, anki_nt)
+            for p in notetype_paths(notetypes_dir, name):
+                changed_files.add(str(p.relative_to(repo_path)))
+            result.notetypes_exported += 1
+        elif git_nt:
             _import_notetype(col, repo_path, name)
             result.notetypes_imported += 1
 
