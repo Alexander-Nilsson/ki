@@ -12,7 +12,7 @@ import logging
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Set
+from typing import Callable, Dict, Optional, Set
 
 from anki.collection import Collection
 
@@ -84,14 +84,17 @@ class SyncResult:
     commit_count: int = 0
 
 
-def _export_single_note(col, repo_path: Path, nid: int) -> bool:
+def _export_single_note(col: Collection, repo_path: Path, nid: int) -> bool:
     """Export a single note from Anki into repo files."""
     try:
         note_obj = col.get_note(nid)
     except Exception:
         return False
 
-    nt_name = note_obj.note_type()["name"]
+    nt_dict = note_obj.note_type()
+    if nt_dict is None:
+        return False
+    nt_name = nt_dict["name"]
     try:
         cards = note_obj.cards()
         if not cards:
@@ -116,11 +119,11 @@ def sync_collection(
     col: Collection,
     repo_path: Path,
     sync_mode: str = SyncMode.ALWAYS_ASK,
-    conflict_callback: Callable = None,
+    conflict_callback: Optional[Callable] = None,
     remote_url: str = "",
-    progress_callback: Callable = None,
+    progress_callback: Optional[Callable[[str], None]] = None,
     media_strategy: str = "none",
-    preview_callback: Callable = None,
+    preview_callback: Optional[Callable] = None,
 ) -> SyncResult:
     _start = time.perf_counter()
     result = SyncResult()
@@ -221,8 +224,7 @@ def sync_collection(
     if progress_callback:
         progress_callback("Importing changes from repo...")
 
-    col.db.execute("begin")
-    try:
+    def _do_import():
         for nid in notes_to_import_nids:
             if import_helpers.import_single_note(
                 col, repo_path, nid, notes_lookup=notes_lookup,
@@ -233,9 +235,11 @@ def sync_collection(
             if import_helpers.delete_note_from_anki(col, nid):
                 result.notes_deleted_from_anki += 1
 
-        col.db.execute("commit")
+    db = col.db
+    assert db is not None
+    try:
+        db.transact(_do_import)
     except Exception as e:
-        col.db.execute("rollback")
         _logger.exception("Failed to import notes from repo")
         result.error = str(e)
         return result

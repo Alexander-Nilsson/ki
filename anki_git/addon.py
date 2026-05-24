@@ -57,11 +57,6 @@ def _setup_logging():
         print(f"AnkiGit: Could not setup file logging: {e}")
 
 
-aqt = _import("aqt")
-if aqt is not None:
-    _setup_logging()
-
-
 def load_config() -> KiSyncConfig:
     global _config
     if _config is not None:
@@ -132,9 +127,9 @@ def sync_action() -> None:
             def on_main():
                 diag = ConflictResolutionDialog(report, mw)
                 if diag.exec():
-                    resolved_report[0] = diag.resolved_report
+                    resolved_report[0] = diag.resolved_report  # type: ignore[arg-type]
                 else:
-                    resolved_report[0] = report
+                    resolved_report[0] = report  # type: ignore[arg-type]
                 event.set()
             mw.taskman.run_on_main(on_main)
             event.wait()
@@ -733,6 +728,8 @@ def _on_operation(changes, handler) -> None:
 
 
 def init_addon() -> None:
+    if _import("aqt") is not None:
+        _setup_logging()
     from aqt import gui_hooks
     gui_hooks.profile_did_open.append(on_profile_open)
     gui_hooks.profile_will_close.append(on_profile_close)

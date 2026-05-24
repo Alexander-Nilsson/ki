@@ -6,8 +6,11 @@ remain testable without the Anki Qt runtime.
 """
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Set, TYPE_CHECKING
+from typing import Dict, Optional, Set, TYPE_CHECKING
+
+from anki.collection import Collection
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
@@ -18,7 +21,7 @@ NOTETYPES_DIR = "notetypes"
 DECKS_DIR = "decks"
 
 
-def compute_anki_checksums(col) -> Dict[str, str]:
+def compute_anki_checksums(col: Collection) -> Dict[str, str]:
     """Compute checksums for Anki notes using the same Note.serialize()
     format as git checksums, so conflict detection works correctly.
     """
@@ -26,12 +29,17 @@ def compute_anki_checksums(col) -> Dict[str, str]:
     from anki_git.formats.notes_md import Note
 
     checksums = {}
-    for nid in col.db.list("SELECT id FROM notes WHERE id > 0"):
+    db = col.db
+    assert db is not None
+    for nid in db.list("SELECT id FROM notes WHERE id > 0"):
         try:
             note_obj = col.get_note(nid)
         except Exception:
             continue
-        nt_name = note_obj.note_type()["name"]
+        nt_dict = note_obj.note_type()
+        if nt_dict is None:
+            continue
+        nt_name = nt_dict["name"]
         try:
             cards = note_obj.cards()
             if not cards:
@@ -76,8 +84,8 @@ def load_all_repo_notes(repo_path: Path) -> Dict[int, "Note"]:
     return notes
 
 
-def import_single_note(col, repo_path: Path, nid: int,
-                       notes_lookup: Dict[int, "Note"] = None) -> bool:
+def import_single_note(col: Collection, repo_path: Path, nid: int,
+                       notes_lookup: Optional[Dict[int, "Note"]] = None) -> bool:
     """Import a single note from repo into Anki. Returns True on success.
 
     Optionally accepts a pre-built notes_lookup dict; if not provided,
@@ -123,7 +131,7 @@ def import_single_note(col, repo_path: Path, nid: int,
             return False
 
 
-def delete_note_from_anki(col, nid: int) -> bool:
+def delete_note_from_anki(col: Collection, nid: int) -> bool:
     """Remove a note from Anki by nid. Returns True on success."""
     try:
         col.get_note(nid)
@@ -147,7 +155,7 @@ def delete_note_from_repo(repo_path: Path, nid: int) -> bool:
     return False
 
 
-def import_notetype(col, repo_path: Path, nt_name: str) -> bool:
+def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
     """Import a single notetype from repo into Anki."""
     from anki_git.formats.notetype_yaml import read_all_notetypes
 
@@ -187,7 +195,7 @@ def import_notetype(col, repo_path: Path, nt_name: str) -> bool:
     return True
 
 
-def import_notetypes(col, repo_path: Path, result) -> None:
+def import_notetypes(col: Collection, repo_path: Path, result) -> None:
     """Import all notetypes from repo into Anki, updating result in-place."""
     from anki_git.formats.notetype_yaml import read_all_notetypes
 
@@ -226,8 +234,8 @@ def import_notetypes(col, repo_path: Path, result) -> None:
             result.notetypes_created += 1
 
 
-def import_notes(col, repo_path: Path, result,
-                 nid_filter: Set[int] = None) -> None:
+def import_notes(col: Collection, repo_path: Path, result,
+                 nid_filter: Optional[Set[int]] = None) -> None:
     """Import notes from repo into Anki.
 
     If nid_filter is provided, only import notes whose nid is in the set.
@@ -281,12 +289,14 @@ def import_notes(col, repo_path: Path, result,
                     )
 
 
-def cleanup_stale_repo_notes(col, repo_path: Path) -> int:
+def cleanup_stale_repo_notes(col: Collection, repo_path: Path) -> int:
     """Remove repo note files for notes that no longer exist in Anki.
 
     Returns the number of files cleaned up.
     """
-    anki_nids = set(col.db.list("SELECT id FROM notes WHERE id > 0"))
+    db = col.db
+    assert db is not None
+    anki_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
     decks_dir = repo_path / DECKS_DIR
     cleaned = 0
     for notes_file in sorted(decks_dir.rglob("*.md")):

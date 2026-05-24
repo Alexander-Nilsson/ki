@@ -1,7 +1,8 @@
 import logging
 import time
 from pathlib import Path
-from typing import Dict, List, Set
+from collections.abc import Callable
+from typing import Dict, List, Optional, Set
 
 from anki.collection import Collection
 
@@ -37,8 +38,8 @@ class ExportResult:
         notes_changed: int = 0,
         notetypes_changed: int = 0,
         notes_deleted_from_repo: int = 0,
-        changed_decks: Dict[str, int] = None,
-        changed_notetypes: List[str] = None,
+        changed_decks: Optional[Dict[str, int]] = None,
+        changed_notetypes: Optional[List[str]] = None,
         error: str = "",
         duration_seconds: float = 0.0,
         commit_count: int = 0,
@@ -57,7 +58,7 @@ def export_collection(
     col: Collection,
     repo_path: Path,
     remote_url: str = "",
-    progress_callback: callable = None,
+    progress_callback: Optional[Callable[[str], None]] = None,
     media_strategy: str = "none",
 ) -> ExportResult:
     _start = time.perf_counter()
@@ -98,7 +99,9 @@ def export_collection(
 
     if progress_callback:
         progress_callback("Reading notes...")
-    nids = col.db.list("SELECT id FROM notes WHERE id > 0")
+    db = col.db
+    assert db is not None
+    nids = db.list("SELECT id FROM notes WHERE id > 0")
     total = len(nids)
     notes_by_deck: Dict[str, List[Note]] = {}
     note_checksums: Dict[str, str] = {}
@@ -116,7 +119,11 @@ def export_collection(
             continue
         mid = note_obj.mid
         if mid not in _nt_name_cache:
-            _nt_name_cache[mid] = note_obj.note_type()["name"]
+            nt_dict = note_obj.note_type()
+            if nt_dict is None:
+                _logger.warning("Note %d has no notetype, skipping", nid)
+                continue
+            _nt_name_cache[mid] = nt_dict["name"]
         nt_name = _nt_name_cache[mid]
         try:
             cards = note_obj.cards()
@@ -170,8 +177,8 @@ def export_collection(
         if progress_callback:
             progress_callback("Handling media files...")
         col_media_dir = (
-            Path(col.media.dir()) if hasattr(col, "media")
-            else col.path.parent / "collection.media"
+            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
+            else Path(col.path).parent / "collection.media"
         )
         repo_media_dir = repo_path / "media"
         strategy = MediaStrategy(media_strategy)

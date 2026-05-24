@@ -9,46 +9,46 @@ from anki_git.config import KiSyncConfig, SYNC_MODE_CHOICES
 from anki_git.engine.git_ops import open_repo, get_existing_remote_url
 
 
-class SettingsDialog:
+class SettingsDialog(QDialog):
     def __init__(self, config: KiSyncConfig, parent=None):
+        super().__init__(parent)
         self.config = config
-        self.dialog = QDialog(parent)
-        self.dialog.setWindowTitle("AnkiGit Settings")
-        self.dialog.setMinimumWidth(550)
+        self.setWindowTitle("AnkiGit Settings")
+        self.setMinimumWidth(550)
         self._setup_ui()
         self._load_config()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self.dialog)
+        layout = QVBoxLayout(self)
 
-        repo_group = QGroupBox("Repository", self.dialog)
+        repo_group = QGroupBox("Repository", self)
         repo_layout = QFormLayout(repo_group)
         repo_path_layout = QHBoxLayout()
-        self._repo_path_input = QLineEdit(self.dialog)
+        self._repo_path_input = QLineEdit(self)
         self._repo_path_input.setPlaceholderText("/path/to/anki-repo")
-        browse_btn = QPushButton("Browse...", self.dialog)
+        browse_btn = QPushButton("Browse...", self)
         browse_btn.clicked.connect(self._browse_repo)
         repo_path_layout.addWidget(self._repo_path_input)
         repo_path_layout.addWidget(browse_btn)
         repo_layout.addRow("Repo path:", repo_path_layout)
         remote_layout = QHBoxLayout()
-        self._check_remote_btn = QPushButton("Check Remote", self.dialog)
+        self._check_remote_btn = QPushButton("Check Remote", self)
         self._check_remote_btn.clicked.connect(self._check_remote)
-        self._remote_check_label = QLabel("", self.dialog)
+        self._remote_check_label = QLabel("", self)
         remote_layout.addWidget(self._check_remote_btn)
         remote_layout.addWidget(self._remote_check_label)
         remote_layout.addStretch()
         repo_layout.addRow("Remote:", remote_layout)
         layout.addWidget(repo_group)
 
-        sync_group = QGroupBox("Sync Behavior", self.dialog)
+        sync_group = QGroupBox("Sync Behavior", self)
         sync_layout = QFormLayout(sync_group)
-        self._auto_startup_cb = QCheckBox("Auto-sync on startup", self.dialog)
+        self._auto_startup_cb = QCheckBox("Auto-sync on startup", self)
         sync_layout.addRow(self._auto_startup_cb)
-        self._auto_close_cb = QCheckBox("Auto-snapshot on close", self.dialog)
+        self._auto_close_cb = QCheckBox("Auto-snapshot on close", self)
         sync_layout.addRow(self._auto_close_cb)
 
-        self._bg_mode_cb = QCheckBox("Background mode (no dialogs)", self.dialog)
+        self._bg_mode_cb = QCheckBox("Background mode (no dialogs)", self)
         sync_layout.addRow(self._bg_mode_cb)
         bg_note = QLabel(
             "Run auto operations silently without progress or result dialogs.\n"
@@ -57,18 +57,18 @@ class SettingsDialog:
         bg_note.setStyleSheet("color: #888; font-size: 11px;")
         sync_layout.addRow("", bg_note)
 
-        self._auto_push_cb = QCheckBox("Auto-push after snapshot", self.dialog)
+        self._auto_push_cb = QCheckBox("Auto-push after snapshot", self)
         sync_layout.addRow(self._auto_push_cb)
 
         debounce_layout = QHBoxLayout()
-        self._debounce_input = QSpinBox(self.dialog)
+        self._debounce_input = QSpinBox(self)
         self._debounce_input.setRange(500, 10000)
         self._debounce_input.setSingleStep(500)
         self._debounce_input.setSuffix(" ms")
         debounce_layout.addWidget(self._debounce_input)
         sync_layout.addRow("Debounce delay:", debounce_layout)
 
-        self._sync_mode_combo = QComboBox(self.dialog)
+        self._sync_mode_combo = QComboBox(self)
         for value, label in SYNC_MODE_CHOICES:
             self._sync_mode_combo.addItem(label, value)
         sync_layout.addRow("Conflict resolution:", self._sync_mode_combo)
@@ -84,19 +84,19 @@ class SettingsDialog:
 
         layout.addWidget(sync_group)
 
-        media_group = QGroupBox("Media", self.dialog)
+        media_group = QGroupBox("Media", self)
         media_layout = QFormLayout(media_group)
-        self._media_strategy_combo = QComboBox(self.dialog)
+        self._media_strategy_combo = QComboBox(self)
         self._media_strategy_combo.addItems(["none", "symlink", "copy", "git-lfs"])
         media_layout.addRow("Media strategy:", self._media_strategy_combo)
         layout.addWidget(media_group)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
-            self.dialog,
+            self,
         )
         buttons.accepted.connect(self._save_and_accept)
-        buttons.rejected.connect(self.dialog.reject)
+        buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
     def _load_config(self):
@@ -122,10 +122,10 @@ class SettingsDialog:
         self.config.debounce_delay_ms = self._debounce_input.value()
         self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.sync_mode = self._sync_mode_combo.currentData()
-        self.dialog.accept()
+        self.accept()
 
     def _browse_repo(self):
-        path = QFileDialog.getExistingDirectory(self.dialog, "Select Git Repository Path")
+        path = QFileDialog.getExistingDirectory(self, "Select Git Repository Path")
         if path:
             self._repo_path_input.setText(path)
 
@@ -166,6 +166,3 @@ class SettingsDialog:
         finally:
             self._check_remote_btn.setEnabled(True)
             self._check_remote_btn.setText("Check Remote")
-
-    def exec(self):
-        return self.dialog.exec()

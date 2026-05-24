@@ -52,7 +52,8 @@ jobs:
           uv sync --frozen --no-dev --no-cache
           .venv/bin/pip install \
             flake8 \
-            "pytest>=8.4.1" "pytest-cov>=6.1.1"
+            "pytest>=8.4.1" "pytest-cov>=6.1.1" \
+            pyright
 
       - name: Install anki/aqt for integration tests
         run: |
@@ -72,6 +73,10 @@ jobs:
       - name: Lint
         run: |
           .venv/bin/flake8 anki_git/ tests/
+
+      - name: Type Check
+        run: |
+          .venv/bin/pyright anki_git/
 
       - name: Test
         run: |
