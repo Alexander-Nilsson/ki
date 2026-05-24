@@ -24,7 +24,6 @@ class KiSyncConfig:
     auto_snapshot_on_close: bool = False
     debounce_delay_ms: int = 2000
     media_strategy: str = "none"
-    remote_url: str = ""
     auto_push_after_snapshot: bool = False
     log_level: str = "INFO"
     sync_mode: str = SyncMode.ALWAYS_ASK

@@ -309,7 +309,6 @@ class TestAddonActions:
             # Setup config
             config = MagicMock()
             config.repo_path = str(tmp_path)
-            config.auto_push_after_snapshot = False
             config.media_strategy = "none"
             mock_load_config.return_value = config
             

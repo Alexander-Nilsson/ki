@@ -32,8 +32,6 @@ class TestKiSyncConfig:
         assert cfg.auto_snapshot_on_close is False
         assert cfg.debounce_delay_ms == 2000
         assert cfg.media_strategy == "none"
-        assert cfg.remote_url == ""
-        assert cfg.auto_push_after_snapshot is False
         assert cfg.log_level == "INFO"
         assert cfg.sync_mode == SyncMode.ALWAYS_ASK
 
@@ -62,8 +60,6 @@ class TestKiSyncConfig:
             auto_snapshot_on_close=True,
             debounce_delay_ms=3000,
             media_strategy="symlink",
-            remote_url="https://example.com/repo.git",
-            auto_push_after_snapshot=True,
             log_level="DEBUG",
             sync_mode=SyncMode.PREFER_ANKI,
         )

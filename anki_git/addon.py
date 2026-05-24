@@ -4,10 +4,18 @@ from pathlib import Path
 
 from anki_git.config import KiSyncConfig, SyncMode
 from anki_git.engine.exporter import export_collection
+from anki_git.engine.git_ops import get_existing_remote_url, open_repo
 
 _export_timer = None
 _config = None
 _logger = logging.getLogger("anki_git")
+
+
+def _get_remote_url(repo_path: Path, enabled: bool = True) -> str:
+    if not enabled:
+        return ""
+    repo = open_repo(repo_path)
+    return get_existing_remote_url(repo) if repo else ""
 
 
 def _import(name):
@@ -171,9 +179,7 @@ def sync_action() -> None:
             sync_mode=sync_mode,
             conflict_callback=conflict_cb,
             preview_callback=preview_cb,
-            remote_url=(
-                config.remote_url if config.auto_push_after_snapshot else ""
-            ),
+            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             ),
@@ -302,11 +308,7 @@ def snapshot_action() -> None:
             return export_collection(
                 col,
                 repo_path,
-                remote_url=(
-                    config.remote_url
-                    if config.auto_push_after_snapshot
-                    else ""
-                ),
+                remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
                 progress_callback=lambda text: mw.taskman.run_on_main(
                     lambda: mw.progress.update(label=text)
                 ),
@@ -595,9 +597,7 @@ def _run_background_sync(config: KiSyncConfig) -> None:
             col, repo_path,
             sync_mode=config.sync_mode,
             conflict_callback=None,
-            remote_url=(
-                config.remote_url if config.auto_push_after_snapshot else ""
-            ),
+            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
             media_strategy=config.media_strategy,
         )
         if result.error:
@@ -627,9 +627,7 @@ def _run_background_export(config: KiSyncConfig) -> None:
     def do_export(col):
         result = export_collection(
             col, repo_path,
-            remote_url=(
-                config.remote_url if config.auto_push_after_snapshot else ""
-            ),
+            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
             media_strategy=config.media_strategy,
         )
         if result.error:

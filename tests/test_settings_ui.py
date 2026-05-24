@@ -15,8 +15,6 @@ class TestSettingsDialogLogic:
             auto_snapshot_on_close=False,
             debounce_delay_ms=3000,
             media_strategy="symlink",
-            remote_url="https://example.com/repo.git",
-            auto_push_after_snapshot=True,
             log_level="DEBUG",
             sync_mode=SyncMode.PREFER_REPO,
         )
