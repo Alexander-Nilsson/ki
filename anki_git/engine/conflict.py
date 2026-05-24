@@ -20,6 +20,8 @@ from enum import Enum
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
+from anki_git.config import SyncMode
+
 
 class ConflictType(Enum):
     CONFLICT = "conflict"
@@ -52,6 +54,41 @@ class ConflictReport:
     @property
     def total(self) -> int:
         return len(self.conflicts)
+
+
+def resolve_conflicts(report: ConflictReport, sync_mode: str) -> None:
+    """Auto-resolve conflicts based on sync_mode.
+
+    Modifies the report in-place, marking conflicts as resolved.
+    """
+    for c in report.conflicts:
+        if c.resolved:
+            continue
+        if c.conflict_type == ConflictType.CONFLICT:
+            if sync_mode == SyncMode.PREFER_ANKI:
+                c.resolution = "anki"
+                c.resolved = True
+            elif sync_mode == SyncMode.PREFER_REPO:
+                c.resolution = "git"
+                c.resolved = True
+            elif sync_mode == SyncMode.ACCEPT_ALL:
+                c.resolution = "anki"
+                c.resolved = True
+            # ALWAYS_ASK: leave unresolved
+        elif c.conflict_type == ConflictType.ANKI_WINS:
+            c.resolution = "anki"
+            c.resolved = True
+        elif c.conflict_type == ConflictType.GIT_WINS:
+            c.resolution = "git"
+            c.resolved = True
+        elif c.conflict_type == ConflictType.DELETE_FROM_GIT:
+            c.resolution = "anki"
+            c.resolved = True
+        elif c.conflict_type == ConflictType.DELETE_FROM_ANKI:
+            c.resolution = "git"
+            c.resolved = True
+        elif c.conflict_type == ConflictType.ALREADY_GONE:
+            c.resolved = True
 
 
 def detect_conflicts(

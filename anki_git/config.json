@@ -6,5 +6,6 @@
     "media_strategy": "none",
     "remote_url": "",
     "auto_push_after_snapshot": false,
-    "log_level": "INFO"
+    "log_level": "INFO",
+    "sync_mode": "always_ask"
 }

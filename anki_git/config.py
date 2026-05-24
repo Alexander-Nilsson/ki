@@ -1,6 +1,20 @@
 from dataclasses import dataclass, asdict
 
 
+class SyncMode:
+    ALWAYS_ASK = "always_ask"
+    PREFER_ANKI = "prefer_anki"
+    PREFER_REPO = "prefer_repo"
+    ACCEPT_ALL = "accept_all"
+
+    CHOICES = [
+        ("always_ask", "Always ask"),
+        ("prefer_anki", "Anki wins"),
+        ("prefer_repo", "Repo wins"),
+        ("accept_all", "Accept all (auto-resolve)"),
+    ]
+
+
 @dataclass
 class KiSyncConfig:
     repo_path: str = ""
@@ -11,6 +25,7 @@ class KiSyncConfig:
     remote_url: str = ""
     auto_push_after_snapshot: bool = False
     log_level: str = "INFO"
+    sync_mode: str = SyncMode.ALWAYS_ASK
 
     @classmethod
     def from_dict(cls, d: dict) -> "KiSyncConfig":

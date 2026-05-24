@@ -2,9 +2,8 @@ import datetime
 import logging
 from pathlib import Path
 
-from anki_git.config import KiSyncConfig
+from anki_git.config import KiSyncConfig, SyncMode
 from anki_git.engine.exporter import export_collection
-from anki_git.engine.git_ops import get_or_init_repo, get_commit_count
 
 _export_timer = None
 _config = None
@@ -72,6 +71,100 @@ def save_config(config: KiSyncConfig) -> None:
             _logger.warning("Failed to save config: %s", e)
 
 
+def sync_action() -> None:
+    from aqt.qt import QMessageBox
+    from aqt.operations import QueryOp
+    from anki_git.engine.sync import sync_collection
+
+    config = load_config()
+    from aqt import mw
+
+    if not config.repo_path:
+        QMessageBox.warning(
+            mw, "AnkiGit", "Please set a repository path in Tools > AnkiGit > Settings first."
+        )
+        return
+
+    if mw is None or mw.col is None:
+        QMessageBox.critical(mw, "AnkiGit", "No collection is open.")
+        return
+
+    repo_path = Path(config.repo_path)
+
+    def do_sync(col):
+        _logger.info("Starting two-way sync...")
+
+        import threading
+        event = threading.Event()
+        resolved_report = [None]
+
+        def conflict_handler(report):
+            from anki_git.ui import ConflictResolutionDialog
+
+            def on_main():
+                diag = ConflictResolutionDialog(report, mw)
+                if diag.exec():
+                    resolved_report[0] = diag.resolved_report
+                else:
+                    resolved_report[0] = report
+                event.set()
+            mw.taskman.run_on_main(on_main)
+            event.wait()
+            return resolved_report[0]
+
+        sync_mode = config.sync_mode
+        conflict_cb = conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
+
+        return sync_collection(
+            col,
+            repo_path,
+            sync_mode=sync_mode,
+            conflict_callback=conflict_cb,
+            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+            progress_callback=lambda text: mw.taskman.run_on_main(
+                lambda: mw.progress.update(label=text)
+            ),
+            media_strategy=config.media_strategy,
+        )
+
+    def on_sync_done(result):
+        if result.error:
+            _logger.error("Sync failed: %s", result.error)
+            QMessageBox.critical(mw, "AnkiGit Sync", f"Error: {result.error}")
+            return
+
+        parts = []
+        if result.notes_exported:
+            parts.append(f"Notes exported: {result.notes_exported}")
+        if result.notes_imported:
+            parts.append(f"Notes imported: {result.notes_imported}")
+        if result.notetypes_exported:
+            parts.append(f"Notetypes exported: {result.notetypes_exported}")
+        if result.notetypes_imported:
+            parts.append(f"Notetypes imported: {result.notetypes_imported}")
+        if result.conflicts_resolved:
+            parts.append(f"Conflicts resolved: {result.conflicts_resolved}")
+        if result.conflicts_unresolved:
+            parts.append(f"Conflicts unresolved: {result.conflicts_unresolved}")
+        parts.append(f"Duration: {result.duration_seconds:.1f}s")
+
+        if not parts:
+            QMessageBox.information(mw, "AnkiGit Sync", "No changes detected. Everything is in sync.")
+            return
+
+        QMessageBox.information(mw, "AnkiGit Sync", "\n".join(parts))
+
+    def on_sync_failed(e):
+        _logger.exception("Sync operation failed")
+        QMessageBox.critical(mw, "AnkiGit", f"Sync failed: {e}")
+
+    QueryOp(
+        parent=mw,
+        op=do_sync,
+        success=on_sync_done,
+    ).failure(on_sync_failed).with_progress("Syncing...").run_in_background()
+
+
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox
     from aqt.operations import QueryOp
@@ -104,7 +197,7 @@ def snapshot_action() -> None:
         _logger.info("Diff computed: %d notes, %d notetypes changed", len(report.note_diffs), len(report.notetype_diffs))
         if not report.has_changes:
             return report, None
-        
+
         _logger.info("Converting report to UI data...")
         mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
         from anki_git.ui.diff import report_to_diff_data
@@ -210,7 +303,7 @@ def import_action() -> None:
         )
         if not report.has_changes:
             return report, None
-        
+
         mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
@@ -233,9 +326,11 @@ def import_action() -> None:
             backup_path.write_bytes(col_path.read_bytes())
 
             import threading
+
             def handle_conflicts_bg(report):
                 event = threading.Event()
                 resolved = [report]
+
                 def on_main():
                     diag = ConflictResolutionDialog(report, mw)
                     if diag.exec():
@@ -318,11 +413,15 @@ def show_menu() -> None:
     if parent_menu is None:
         parent_menu = QMenu("AnkiGit", mw)
 
-    snapshot_act = QAction("Take Snapshot", mw)
+    sync_act = QAction("Sync", mw)
+    sync_act.triggered.connect(sync_action)
+    parent_menu.addAction(sync_act)
+
+    snapshot_act = QAction("Export to Repo (Snapshot)", mw)
     snapshot_act.triggered.connect(snapshot_action)
     parent_menu.addAction(snapshot_act)
 
-    import_act = QAction("Pull from Repo", mw)
+    import_act = QAction("Import from Repo (Pull)", mw)
     import_act.triggered.connect(import_action)
     parent_menu.addAction(import_act)
 
@@ -344,7 +443,7 @@ def on_profile_open() -> None:
         _menu_shown = True
     config = load_config()
     if config.auto_sync_on_startup and config.repo_path:
-        snapshot_action()
+        sync_action()
 
 
 def on_profile_close() -> None:

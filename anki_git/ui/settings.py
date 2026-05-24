@@ -1,10 +1,10 @@
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QCheckBox, QComboBox, QSpinBox, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox,
+    QFileDialog, QFormLayout, QGroupBox, QLabel,
 )
 
-from anki_git.config import KiSyncConfig
+from anki_git.config import KiSyncConfig, SyncMode
 
 
 class SettingsDialog:
@@ -45,6 +45,21 @@ class SettingsDialog:
         self._debounce_input.setSuffix(" ms")
         debounce_layout.addWidget(self._debounce_input)
         sync_layout.addRow("Debounce delay:", debounce_layout)
+
+        self._sync_mode_combo = QComboBox(self.dialog)
+        for value, label in SyncMode.CHOICES:
+            self._sync_mode_combo.addItem(label, value)
+        sync_layout.addRow("Conflict resolution:", self._sync_mode_combo)
+
+        mode_note = QLabel(
+            "Always ask: show dialog for each conflict\n"
+            "Anki wins: auto-resolve in favor of Anki\n"
+            "Repo wins: auto-resolve in favor of repo\n"
+            "Accept all: auto-accept non-conflicting changes; for true conflicts Anki wins"
+        )
+        mode_note.setStyleSheet("color: #888; font-size: 11px;")
+        sync_layout.addRow("", mode_note)
+
         layout.addWidget(sync_group)
 
         media_group = QGroupBox("Media", self.dialog)
@@ -79,6 +94,9 @@ class SettingsDialog:
             self._media_strategy_combo.setCurrentIndex(idx)
         self._remote_url_input.setText(self.config.remote_url)
         self._auto_push_cb.setChecked(self.config.auto_push_after_snapshot)
+        idx = self._sync_mode_combo.findData(self.config.sync_mode)
+        if idx >= 0:
+            self._sync_mode_combo.setCurrentIndex(idx)
 
     def _save_and_accept(self):
         self.config.repo_path = self._repo_path_input.text().strip()
@@ -88,6 +106,7 @@ class SettingsDialog:
         self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.remote_url = self._remote_url_input.text().strip()
         self.config.auto_push_after_snapshot = self._auto_push_cb.isChecked()
+        self.config.sync_mode = self._sync_mode_combo.currentData()
         self.dialog.accept()
 
     def _browse_repo(self):
