@@ -128,15 +128,17 @@ def snapshot_action() -> None:
             return
 
         _logger.info("User accepted changes, starting export...")
-        return export_collection(
-            col,
-            repo_path,
-            remote_url=config.remote_url if config.auto_push_after_snapshot else "",
-            progress_callback=lambda text: mw.taskman.run_on_main(
-                lambda: mw.progress.update(label=text)
-            ),
-            media_strategy=config.media_strategy,
-        )
+
+        def do_export(col):
+            return export_collection(
+                col,
+                repo_path,
+                remote_url=config.remote_url if config.auto_push_after_snapshot else "",
+                progress_callback=lambda text: mw.taskman.run_on_main(
+                    lambda: mw.progress.update(label=text)
+                ),
+                media_strategy=config.media_strategy,
+            )
 
         def on_export_done(result):
             if result.error:

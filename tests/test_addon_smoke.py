@@ -285,3 +285,66 @@ class TestUiAgainstEngine:
 
         dialog = DiffDialog.from_report(report)
         assert dialog is not None
+
+
+@integration
+class TestAddonActions:
+    """Verify high-level actions in addon.py (glue logic)."""
+
+    def test_snapshot_action_workflow(self, anki_session, tmp_path):
+        """Verify snapshot_action triggers the right sequence of QueryOps."""
+        from unittest.mock import MagicMock, patch
+        from anki_git.addon import snapshot_action
+        from pathlib import Path
+
+        with patch("anki_git.addon.load_config") as mock_load_config, \
+             patch("aqt.mw", spec=True) as mock_mw, \
+             patch("aqt.operations.QueryOp") as mock_query_op, \
+             patch("anki_git.ui.DiffDialog") as mock_diff_dialog:
+            
+            # Setup config
+            config = MagicMock()
+            config.repo_path = str(tmp_path)
+            config.auto_push_after_snapshot = False
+            config.media_strategy = "none"
+            mock_load_config.return_value = config
+            
+            # Setup mw
+            mock_mw.col = anki_session.collection
+            mock_mw.taskman = MagicMock()
+            
+            # Track QueryOp calls
+            query_ops = []
+            def mock_query_op_init(parent, op, success):
+                qop = MagicMock()
+                query_ops.append({"op": op, "success": success})
+                qop.failure.return_value = qop
+                qop.with_progress.return_value = qop
+                return qop
+            mock_query_op.side_effect = mock_query_op_init
+            
+            # Trigger action
+            snapshot_action()
+            
+            assert len(query_ops) == 1
+            assert query_ops[0]["op"].__name__ == "get_diff_with_progress"
+            
+            # Simulate first QueryOp success
+            report = MagicMock()
+            report.has_changes = True
+            ui_data = []
+            mock_diff_dialog.return_value.exec.return_value = True # User accepts
+            
+            query_ops[0]["success"]((report, ui_data))
+            
+            # Verify second QueryOp (the export) is triggered
+            assert len(query_ops) == 2
+            assert query_ops[1]["op"].__name__ == "do_export"
+            
+            # Verify export operation works
+            with patch("anki_git.addon.export_collection") as mock_export:
+                query_ops[1]["op"](mock_mw.col)
+                mock_export.assert_called_once()
+                args, _ = mock_export.call_args
+                assert args[0] == mock_mw.col
+                assert args[1] == Path(config.repo_path)
