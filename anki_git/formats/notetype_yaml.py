@@ -150,7 +150,14 @@ class Notetype:
             for i, f in enumerate(d.get("fields", []))
         ]
         templates = [
-            NotetypeTemplate(name=t["name"], ord=t.get("ord", i), qfmt=t.get("qfmt", ""), afmt=t.get("afmt", ""))
+            NotetypeTemplate(
+                name=t["name"],
+                ord=t.get("ord", i),
+                qfmt=t.get("qfmt", ""),
+                afmt=t.get("afmt", ""),
+                bqfmt=t.get("bqfmt", ""),
+                bafmt=t.get("bafmt", ""),
+            )
             for i, t in enumerate(d.get("templates", []))
         ]
         css = d.get("css", "")

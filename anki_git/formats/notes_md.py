@@ -1,6 +1,7 @@
 import re
 from pathlib import Path
 from typing import Dict, List, Optional
+from urllib.parse import quote, unquote
 
 
 HEADER_PATTERN = re.compile(
@@ -8,6 +9,16 @@ HEADER_PATTERN = re.compile(
     r"(?:\s+tags=(?P<tags>\S*))?"
     r"(?:\s+deck=(?P<deck>.+?))?\s*-->"
 )
+
+
+def _decode_tags(tags_str: Optional[str]) -> List[str]:
+    if not tags_str:
+        return []
+    # New format: URL-encoded tags joined with '||'
+    if '||' in tags_str:
+        return [unquote(t) for t in tags_str.split('||')]
+    # Old format (backward compat): raw tags joined with '::'
+    return tags_str.split("::")
 
 
 class NoteField:
@@ -34,8 +45,9 @@ class Note:
 
     def serialize(self) -> str:
         sorted_tags = sorted(self.tags)
+        tags_str = '||'.join(quote(t, safe='') for t in sorted_tags)
         parts = [
-            f"<!-- note: nid={self.nid} notetype={self.notetype} tags={'::'.join(sorted_tags)} deck={self.deck} -->",
+            f"<!-- note: nid={self.nid} notetype={self.notetype} tags={tags_str} deck={self.deck} -->",
         ]
         for name, content in self.fields.items():
             parts.append(f"## {name}")
@@ -58,7 +70,7 @@ def parse_note_section(text: str) -> Optional[Note]:
     notetype = header_match.group("notetype")
     tags_str = header_match.group("tags")
     deck = header_match.group("deck")
-    tags = tags_str.split("::") if tags_str else []
+    tags = _decode_tags(tags_str)
 
     fields = {}
     current_name = None
