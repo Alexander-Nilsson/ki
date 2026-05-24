@@ -10,6 +10,15 @@ _export_timer = None
 _config = None
 _logger = logging.getLogger("anki_git")
 
+
+def _import(name):
+    import importlib
+    try:
+        return importlib.import_module(name)
+    except ImportError:
+        return None
+
+
 # Setup file logging in the addon data directory
 def _setup_logging():
     from aqt import mw
@@ -28,17 +37,10 @@ def _setup_logging():
         # Fallback to console if directory is not writable
         print(f"AnkiGit: Could not setup file logging: {e}")
 
+
 aqt = _import("aqt")
 if aqt is not None:
     _setup_logging()
-
-
-def _import(name):
-    import importlib
-    try:
-        return importlib.import_module(name)
-    except ImportError:
-        return None
 
 
 def load_config() -> KiSyncConfig:
