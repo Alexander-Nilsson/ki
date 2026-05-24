@@ -37,15 +37,13 @@ class Note:
         ]
         for name, content in self.fields.items():
             parts.append(f"## {name}")
-            if content:
-                parts.append(content)
-            parts.append("")
-        return "\n".join(parts).rstrip("\n") + "\n"
+            parts.append(content)
+        return "\n".join(parts) + "\n"
 
 
 def parse_note_section(text: str) -> Optional[Note]:
-    lines = text.strip().split("\n")
-    if not lines:
+    lines = text.split("\n")
+    if not lines or not lines[0].startswith("<!--"):
         return None
 
     header_match = HEADER_PATTERN.match(lines[0])
@@ -66,14 +64,14 @@ def parse_note_section(text: str) -> Optional[Note]:
         field_match = re.match(r"^##\s+(.+)$", line)
         if field_match:
             if current_name is not None:
-                fields[current_name] = "\n".join(current_lines).strip()
+                fields[current_name] = "\n".join(current_lines).rstrip("\n")
             current_name = field_match.group(1).strip()
             current_lines = []
         elif current_name is not None:
             current_lines.append(line)
 
     if current_name is not None:
-        fields[current_name] = "\n".join(current_lines).strip()
+        fields[current_name] = "\n".join(current_lines).rstrip("\n")
 
     return Note(nid=nid, notetype=notetype, tags=tags, deck=deck, fields=fields)
 

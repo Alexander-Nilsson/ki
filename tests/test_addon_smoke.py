@@ -3,6 +3,8 @@
 These verify the addon loads without errors against the real anki runtime.
 Follows the pattern from Anki-Dictionary-Addon's test_addon_loads.py.
 """
+import os
+
 import pytest
 
 try:
@@ -16,6 +18,10 @@ integration = pytest.mark.skipif(
     not _anki_available,
     reason="anki package not available in this environment",
 )
+
+# Ensure offscreen Qt platform for headless environments
+if "DISPLAY" not in os.environ and "QT_QPA_PLATFORM" not in os.environ:
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
 
 
 @integration
@@ -182,3 +188,101 @@ if (el) { el.innerHTML = 'test'; }
         content = path.read_text()
         assert "Hello" in content
         assert "World" in content
+
+    def test_export_diff_compute(self, anki_session, tmp_path):
+        """Full workflow: export → modify note → compute export diff."""
+        from anki_git.engine.exporter import export_collection
+        from anki_git.engine.diff import compute_export_diff
+
+        col = anki_session.collection
+
+        notetype = col.models.by_name("Basic")
+        note = col.new_note(notetype)
+        note.fields[0] = "Hello"
+        note.fields[1] = "World"
+        deck_id = col.decks.all_names_and_ids()[0].id
+        col.add_note(note, deck_id)
+        nid = note.id
+
+        export_collection(col, tmp_path)
+
+        note2 = col.get_note(nid)
+        note2.fields[0] = "Modified"
+        col.update_note(note2)
+
+        report = compute_export_diff(col, tmp_path)
+
+        assert report.total_changes > 0
+        assert any(d.nid == nid for d in report.note_diffs)
+
+
+@integration
+class TestUiAgainstEngine:
+    """Exercise UI components against real data (needs aqt/Qt)."""
+
+    def test_diff_view_dialog_creates(self, anki_session, tmp_path):
+        """Verify DiffViewDialog instantiates without AttributeError.
+
+        This catches PyQt6 regressions like missing ShowIndicator.
+        """
+        from aqt.qt import QApplication
+
+        _ = QApplication.instance() or QApplication([])
+
+        from anki_git.engine.diff import DiffReport, NoteDiff, FieldDiff, NotetypeDiff
+        from anki_git.ui.diff import DiffViewDialog
+
+        nd = NoteDiff(
+            nid=42,
+            deck="Default",
+            notetype="Basic",
+            change_type="modified",
+            field_diffs=[
+                FieldDiff(
+                    field_name="Front",
+                    old_value="Hello",
+                    new_value="Modified",
+                    diff_lines=["--- Front", "+++ Front", "-Hello", "+Modified"],
+                )
+            ],
+        )
+        ntd = NotetypeDiff(
+            name="Basic", change_type="modified",
+            fields_diff="diff content", css_diff=".card{}",
+        )
+        report = DiffReport(note_diffs=[nd], notetype_diffs=[ntd])
+
+        dialog = DiffViewDialog(report)
+        assert dialog is not None
+
+    def test_diff_view_dialog_with_export(self, anki_session, tmp_path):
+        """Full workflow: export → modify → compute diff → build dialog."""
+        from aqt.qt import QApplication
+
+        _ = QApplication.instance() or QApplication([])
+
+        from anki_git.engine.exporter import export_collection
+        from anki_git.engine.diff import compute_export_diff
+        from anki_git.ui.diff import DiffViewDialog
+
+        col = anki_session.collection
+
+        notetype = col.models.by_name("Basic")
+        note = col.new_note(notetype)
+        note.fields[0] = "Front text"
+        note.fields[1] = "Back text"
+        deck_id = col.decks.all_names_and_ids()[0].id
+        col.add_note(note, deck_id)
+
+        export_collection(col, tmp_path)
+
+        note2 = col.get_note(note.id)
+        note2.fields[0] = "Updated front"
+        col.update_note(note2)
+
+        report = compute_export_diff(col, tmp_path)
+
+        assert report.has_changes
+
+        dialog = DiffViewDialog(report)
+        assert dialog is not None

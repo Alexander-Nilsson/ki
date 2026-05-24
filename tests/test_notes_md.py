@@ -193,11 +193,11 @@ def test_parse_tags_with_trailing_colon():
 
 
 def test_parse_whitespace_only_field():
-    """A field containing only whitespace should be stripped to empty."""
+    """A field containing only whitespace should be preserved."""
     text = "<!-- note: nid=1 notetype=Basic tags= deck=Default -->\n## Front\n   \n## Back\nHello"
     note = parse_note_section(text)
     assert note is not None
-    assert note.fields["Front"] == ""
+    assert note.fields["Front"] == "   "
     assert note.fields["Back"] == "Hello"
 
 

@@ -53,6 +53,12 @@ def _diff_to_html(diff_lines: List[str]) -> str:
 def _note_diff_to_html(nd: NoteDiff) -> str:
     header = f"{nd.change_type.upper()} note {nd.nid} &mdash; {nd.deck} ({nd.notetype})"
     parts = [f'<div class="header">{header}</div>']
+    
+    if nd.deck_changed:
+        parts.append(f'<div class="line-meta">Deck: <span class="line-del">{nd.old_deck}</span> &rarr; <span class="line-add">{nd.deck}</span></div>')
+    if nd.notetype_changed:
+        parts.append(f'<div class="line-meta">Notetype: <span class="line-del">{nd.old_notetype}</span> &rarr; <span class="line-add">{nd.notetype}</span></div>')
+
     if nd.tags_changed:
         old_set = set(nd.old_tags)
         new_set = set(nd.new_tags)
@@ -182,7 +188,7 @@ class DiffViewDialog(QDialog):
             count = _deck_count_label(notes)
             deck_item = QTreeWidgetItem([f"{deck_name}  ({count})"])
             deck_item.setData(0, 256, ("deck", notes))
-            deck_item.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+            deck_item.setChildIndicatorPolicy(QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator)
 
             for nd in sorted(notes, key=lambda x: x.nid):
                 label = f"{nd.nid}  {_count_label(nd)}"

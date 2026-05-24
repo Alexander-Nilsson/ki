@@ -27,6 +27,16 @@ class NoteDiff:
     old_tags: List[str] = field(default_factory=list)
     new_tags: List[str] = field(default_factory=list)
     tags_changed: bool = False
+    old_deck: Optional[str] = None
+    old_notetype: Optional[str] = None
+
+    @property
+    def deck_changed(self) -> bool:
+        return self.old_deck is not None and self.old_deck != self.deck
+
+    @property
+    def notetype_changed(self) -> bool:
+        return self.old_notetype is not None and self.old_notetype != self.notetype
 
     @property
     def added_lines(self) -> int:
@@ -136,16 +146,20 @@ def compute_note_diff(old_note: Optional[Note], new_note: Note) -> NoteDiff:
     old_tags_set = set(old_note.tags)
     new_tags_set = set(new_note.tags)
     tags_changed = old_tags_set != new_tags_set
+    deck_changed = old_note.deck != new_note.deck
+    nt_changed = old_note.notetype != new_note.notetype
 
     return NoteDiff(
         nid=new_note.nid,
         deck=new_note.deck,
         notetype=new_note.notetype,
-        change_type="modified" if (field_diffs or tags_changed) else "unchanged",
+        change_type="modified" if (field_diffs or tags_changed or deck_changed or nt_changed) else "unchanged",
         field_diffs=field_diffs,
         old_tags=old_note.tags,
         new_tags=new_note.tags,
         tags_changed=tags_changed,
+        old_deck=old_note.deck,
+        old_notetype=old_note.notetype,
     )
 
 
