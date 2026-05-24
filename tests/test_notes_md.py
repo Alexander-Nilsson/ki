@@ -14,7 +14,6 @@ SINGLE_NOTE = """\
 <!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->
 ## Front
 日本語
-
 ## Back
 Japanese language
 """
@@ -23,7 +22,6 @@ NOTE_WITH_EMPTY_FIELD = """\
 <!-- note: nid=1111111111 notetype=Basic tags= deck=Default -->
 ## Front
 Hello
-
 ## Back
 """
 
@@ -43,7 +41,7 @@ def test_parse_single_note():
 def test_parse_two_notes():
     # Rejoin to simulate the file
     note1 = parse_note_section(
-        "<!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->\n## Front\n日本語\n\n## Back\nJapanese language"
+        "<!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->\n## Front\n日本語\n## Back\nJapanese language"
     )
     assert note1 is not None
     assert note1.nid == 1234567890
@@ -189,7 +187,7 @@ def test_parse_tags_with_trailing_colon():
     text = "<!-- note: nid=1 notetype=Basic tags=foo::bar:: deck=Default -->\n## Front\nHello"
     note = parse_note_section(text)
     assert note is not None
-    assert note.tags == ["foo", "bar", ""]
+    assert note.tags == ["", "bar", "foo"]
 
 
 def test_parse_whitespace_only_field():

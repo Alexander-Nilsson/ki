@@ -35,10 +35,10 @@ class NotetypeTemplate:
     def __init__(self, name: str, ord: int, qfmt: str, afmt: str, bqfmt: str = "", bafmt: str = ""):
         self.name = name
         self.ord = ord
-        self.qfmt = qfmt
-        self.afmt = afmt
-        self.bqfmt = bqfmt
-        self.bafmt = bafmt
+        self.qfmt = qfmt.replace("\r\n", "\n")
+        self.afmt = afmt.replace("\r\n", "\n")
+        self.bqfmt = bqfmt.replace("\r\n", "\n")
+        self.bafmt = bafmt.replace("\r\n", "\n")
 
 
 class Notetype:
@@ -57,7 +57,7 @@ class Notetype:
         self.id = id
         self.fields = fields
         self.templates = templates
-        self.css = css
+        self.css = css.replace("\r\n", "\n")
         self.sort_field = sort_field
         self.type = type
         self.deck_presets = deck_presets or {}

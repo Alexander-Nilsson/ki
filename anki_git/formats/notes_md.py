@@ -27,22 +27,26 @@ class Note:
     ):
         self.nid = nid
         self.notetype = notetype
-        self.tags = tags
+        self.tags = sorted(tags)
         self.deck = deck
-        self.fields = fields
+        # Normalize newlines to LF for consistent comparison and storage
+        self.fields = {k: v.replace("\r\n", "\n") for k, v in fields.items()}
 
     def serialize(self) -> str:
+        sorted_tags = sorted(self.tags)
         parts = [
-            f"<!-- note: nid={self.nid} notetype={self.notetype} tags={'::'.join(self.tags)} deck={self.deck} -->",
+            f"<!-- note: nid={self.nid} notetype={self.notetype} tags={'::'.join(sorted_tags)} deck={self.deck} -->",
         ]
         for name, content in self.fields.items():
             parts.append(f"## {name}")
-            parts.append(content)
+            # Normalize newlines to LF
+            parts.append(content.replace("\r\n", "\n"))
         return "\n".join(parts) + "\n"
 
 
 def parse_note_section(text: str) -> Optional[Note]:
-    lines = text.split("\n")
+    # Use lstrip to handle leading newlines from re.split
+    lines = text.lstrip("\n").split("\n")
     if not lines or not lines[0].startswith("<!--"):
         return None
 
@@ -64,14 +68,19 @@ def parse_note_section(text: str) -> Optional[Note]:
         field_match = re.match(r"^##\s+(.+)$", line)
         if field_match:
             if current_name is not None:
-                fields[current_name] = "\n".join(current_lines).rstrip("\n")
+                # Fields followed by another field don't have the section's trailing newline
+                fields[current_name] = "\n".join(current_lines)
             current_name = field_match.group(1).strip()
             current_lines = []
         elif current_name is not None:
             current_lines.append(line)
 
     if current_name is not None:
-        fields[current_name] = "\n".join(current_lines).rstrip("\n")
+        # The last field DOES have the section's trailing newline added by serialize().
+        # We strip exactly one trailing empty line to account for it.
+        if current_lines and current_lines[-1] == "":
+            current_lines.pop()
+        fields[current_name] = "\n".join(current_lines)
 
     return Note(nid=nid, notetype=notetype, tags=tags, deck=deck, fields=fields)
 
@@ -83,8 +92,7 @@ def parse_notes_file(path: Path) -> List[Note]:
     sections = re.split(r"\n(?=<!--\s*note:)", text)
     notes = []
     for section in sections:
-        section = section.strip()
-        if not section:
+        if not section.strip():
             continue
         note = parse_note_section(section)
         if note:
