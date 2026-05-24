@@ -56,9 +56,20 @@ class NoteDiff:
 
 
 @dataclass
+class ComponentChange:
+    component_type: str  # "field", "template", "css"
+    name: str
+    status: str  # "added", "removed", "modified"
+    old_value: str = ""
+    new_value: str = ""
+
+
+@dataclass
 class NotetypeDiff:
     name: str
     change_type: str  # "modified", "added", "deleted"
+    component_changes: List[ComponentChange] = field(default_factory=list)
+    # legacy fields kept for backwards compat
     fields_diff: str = ""
     templates_diff: str = ""
     css_diff: str = ""
@@ -178,27 +189,125 @@ def _notetype_to_canonical(nt) -> dict:
     }
 
 
+def _diff_field_lists(old_fields, new_fields) -> List[ComponentChange]:
+    changes = []
+    old_by_name = {f.name: f for f in old_fields}
+    new_by_name = {f.name: f for f in new_fields}
+    all_names = set(old_by_name) | set(new_by_name)
+    for name in sorted(all_names):
+        of = old_by_name.get(name)
+        nf = new_by_name.get(name)
+        if of is None:
+            changes.append(ComponentChange(
+                component_type="field", name=name, status="added",
+                new_value=f"ord={nf.ord}"
+            ))
+        elif nf is None:
+            changes.append(ComponentChange(
+                component_type="field", name=name, status="removed",
+                old_value=f"ord={of.ord}"
+            ))
+        elif (of.ord, of.font, of.size, of.sticky, of.rtl) != (nf.ord, nf.font, nf.size, nf.sticky, nf.rtl):
+            changes.append(ComponentChange(
+                component_type="field", name=name, status="modified",
+                old_value=f"ord={of.ord} font={of.font} size={of.size}",
+                new_value=f"ord={nf.ord} font={nf.font} size={nf.size}",
+            ))
+    return changes
+
+
+def _diff_template_lists(old_tmpls, new_tmpls) -> List[ComponentChange]:
+    changes = []
+    old_by_name = {t.name: t for t in old_tmpls}
+    new_by_name = {t.name: t for t in new_tmpls}
+    all_names = set(old_by_name) | set(new_by_name)
+    for name in sorted(all_names):
+        ot = old_by_name.get(name)
+        nt = new_by_name.get(name)
+        if ot is None:
+            changes.append(ComponentChange(
+                component_type="template", name=name, status="added"
+            ))
+        elif nt is None:
+            changes.append(ComponentChange(
+                component_type="template", name=name, status="removed"
+            ))
+        elif ot.qfmt != nt.qfmt or ot.afmt != nt.afmt:
+            changes.append(ComponentChange(
+                component_type="template", name=name, status="modified"
+            ))
+    return changes
+
+
 def compute_notetype_diff(
     old_nt: Optional[Notetype], new_nt: Notetype
 ) -> Optional[NotetypeDiff]:
     if old_nt is None:
-        return NotetypeDiff(name=new_nt.name, change_type="added", fields_diff="(new notetype)")
+        return NotetypeDiff(
+            name=new_nt.name, change_type="added",
+            component_changes=[ComponentChange(
+                component_type="field", name="(new notetype)", status="added",
+                new_value=f"{len(new_nt.fields)} fields, {len(new_nt.templates)} templates",
+            )],
+            fields_diff="(new notetype)",
+        )
 
     if new_nt is None:
-        return NotetypeDiff(name=old_nt.name, change_type="deleted", fields_diff="(deleted notetype)")
+        return NotetypeDiff(
+            name=old_nt.name, change_type="deleted",
+            component_changes=[ComponentChange(
+                component_type="field", name="(deleted notetype)", status="removed",
+                old_value=f"{len(old_nt.fields)} fields, {len(old_nt.templates)} templates",
+            )],
+            fields_diff="(deleted notetype)",
+        )
+
+    changes: List[ComponentChange] = []
+    has_diff = False
+
+    # Compare fields
+    field_changes = _diff_field_lists(old_nt.fields, new_nt.fields)
+    changes.extend(field_changes)
+    if field_changes:
+        has_diff = True
+
+    # Compare templates
+    tmpl_changes = _diff_template_lists(old_nt.templates, new_nt.templates)
+    changes.extend(tmpl_changes)
+    if tmpl_changes:
+        has_diff = True
+
+    # Compare CSS
+    import difflib
+    if old_nt.css != new_nt.css:
+        has_diff = True
+        css_diff_lines = list(difflib.unified_diff(
+            old_nt.css.splitlines(keepends=True),
+            new_nt.css.splitlines(keepends=True),
+            fromfile=f"{new_nt.name}.css",
+            tofile=f"{new_nt.name}.css",
+            lineterm="",
+        ))
+        css_diff = "\n".join(css_diff_lines)
+        changes.append(ComponentChange(
+            component_type="css", name="style.css", status="modified",
+            old_value=old_nt.css, new_value=new_nt.css,
+        ))
+    else:
+        css_diff = ""
+
+    if not has_diff:
+        return None
 
     import json
     old_ser = json.dumps(_notetype_to_canonical(old_nt), indent=2, ensure_ascii=False, sort_keys=True)
     new_ser = json.dumps(_notetype_to_canonical(new_nt), indent=2, ensure_ascii=False, sort_keys=True)
-    if old_ser == new_ser and old_nt.css == new_nt.css:
-        return None
-
     fields_diff = "\n".join(_unified_diff(old_ser, new_ser, f"{new_nt.name}.json"))
-    css_diff = "\n".join(_unified_diff(old_nt.css, new_nt.css, f"{new_nt.name}.css")) if old_nt.css != new_nt.css else ""
 
     return NotetypeDiff(
         name=new_nt.name,
         change_type="modified",
+        component_changes=changes,
         fields_diff=fields_diff,
         css_diff=css_diff,
     )

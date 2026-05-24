@@ -28,6 +28,7 @@ class KiSyncConfig:
     auto_push_after_snapshot: bool = False
     log_level: str = "INFO"
     sync_mode: str = SyncMode.ALWAYS_ASK
+    background_mode: bool = False
 
     @classmethod
     def from_dict(cls, d: dict) -> "KiSyncConfig":

@@ -1,5 +1,3 @@
-"""Diff review dialog for git-style change review."""
-
 import difflib
 import logging
 from typing import List, Dict, Any
@@ -12,11 +10,10 @@ from aqt.qt import (
     QLabel,
     QPushButton,
     QWidget,
-    QListWidget,
-    QListWidgetItem,
+    QTreeWidget,
+    QTreeWidgetItem,
     QTextBrowser,
     Qt,
-    QSize,
 )
 from aqt import mw
 
@@ -24,9 +21,6 @@ _logger = logging.getLogger("anki_git")
 
 
 def get_token_diff(old_str: str, new_str: str):
-    """Perform token-level diffing using SequenceMatcher.
-    Limit input length to avoid O(N^3) performance issues on very long lines.
-    """
     MAX_LINE_LEN = 5000
     if len(old_str) > MAX_LINE_LEN or len(new_str) > MAX_LINE_LEN:
         return (
@@ -65,42 +59,51 @@ def format_diff_line(prefix: str, content: str, line_no: str, cls: str, is_html:
     """
 
 
-class SidebarItemWidget(QWidget):
-    def __init__(self, item_data: Dict[str, Any], parent=None):
-        super().__init__(parent)
-        self.data = item_data
-        self._setup_ui()
+def _count_lines(data: dict) -> tuple:
+    """Return (added_lines, removed_lines) for a diff data item."""
+    added = 0
+    removed = 0
+    for field in data.get("fields", []):
+        for hunk in field.get("hunks", []):
+            added += len(hunk.get("added", "").splitlines())
+            removed += len(hunk.get("removed", "").splitlines())
+    return added, removed
 
-    def _setup_ui(self):
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
 
-        status = self.data.get("status", "modified")
-        dot_color = {"modified": "#888", "added": "#2ecc71", "deleted": "#e74c3c"}.get(status, "#888")
+def _build_deck_tree(notes: List[dict]) -> dict:
+    """Build nested dict from deck::path::parts.
 
-        self.dot = QLabel("●")
-        self.dot.setStyleSheet(f"color: {dot_color}; font-size: 14px;")
-        layout.addWidget(self.dot)
+    Returns: {deck_part: {children: {}, notes: [], note_count: N, added: N, removed: N}}
+    """
+    root = {"children": {}, "notes": [], "note_count": 0, "added": 0, "removed": 0, "name": ""}
 
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(2)
+    for item in notes:
+        parts = item.get("deck", "Unknown").split("::")
+        node = root
+        for part in parts:
+            if part not in node["children"]:
+                node["children"][part] = {
+                    "children": {}, "notes": [], "note_count": 0,
+                    "added": 0, "removed": 0, "name": part,
+                }
+            node = node["children"][part]
+        node["notes"].append(item)
+        add, rem = _count_lines(item)
+        node["note_count"] += 1
+        node["added"] += add
+        node["removed"] += rem
 
-        id_label = QLabel(str(self.data.get("id", "")))
-        id_label.setObjectName("idLabel")
-        text_layout.addWidget(id_label)
+    _aggregate_counts(root)
+    return root
 
-        if self.data["type"] == "note":
-            sub_text = self.data.get("deck", "")
-        else:
-            sub_text = self.data.get("notetype", "")
 
-        sub_label = QLabel(sub_text)
-        sub_label.setObjectName("subLabel")
-        text_layout.addWidget(sub_label)
-
-        layout.addLayout(text_layout)
-        layout.addStretch()
+def _aggregate_counts(node: dict) -> None:
+    """Propagate counts from children up to parent."""
+    for child in node["children"].values():
+        _aggregate_counts(child)
+        node["note_count"] += child["note_count"]
+        node["added"] += child["added"]
+        node["removed"] += child["removed"]
 
 
 def report_to_diff_data(report) -> List[Dict[str, Any]]:
@@ -157,26 +160,47 @@ def report_to_diff_data(report) -> List[Dict[str, Any]]:
 
     for ntd in report.notetype_diffs:
         fields = []
-        if ntd.fields_diff:
-            fields.append({
-                "name": "YAML",
-                "hunks": [{
-                    "removed": "",
-                    "added": ntd.fields_diff,
-                    "context_before": "",
-                    "context_after": ""
-                }]
-            })
-        if ntd.css_diff:
-            fields.append({
-                "name": "CSS",
-                "hunks": [{
-                    "removed": "",
-                    "added": ntd.css_diff,
-                    "context_before": "",
-                    "context_after": ""
-                }]
-            })
+        if ntd.component_changes:
+            for cc in ntd.component_changes:
+                if cc.status in ("added", "modified"):
+                    hunks = [{
+                        "removed": cc.old_value if cc.status == "modified" else "",
+                        "added": cc.new_value,
+                        "context_before": "",
+                        "context_after": ""
+                    }]
+                else:
+                    hunks = [{
+                        "removed": cc.old_value,
+                        "added": "",
+                        "context_before": "",
+                        "context_after": ""
+                    }]
+                fields.append({
+                    "name": f"{cc.component_type}: {cc.name} ({cc.status})",
+                    "hunks": hunks
+                })
+        else:
+            if ntd.fields_diff:
+                fields.append({
+                    "name": "YAML",
+                    "hunks": [{
+                        "removed": "",
+                        "added": ntd.fields_diff,
+                        "context_before": "",
+                        "context_after": ""
+                    }]
+                })
+            if ntd.css_diff:
+                fields.append({
+                    "name": "CSS",
+                    "hunks": [{
+                        "removed": "",
+                        "added": ntd.css_diff,
+                        "context_before": "",
+                        "context_after": ""
+                    }]
+                })
         data.append({
             "type": "template",
             "status": ntd.change_type,
@@ -191,15 +215,13 @@ class DiffDialog(QDialog):
     def __init__(self, diff_data: List[Dict[str, Any]], parent=None):
         super().__init__(parent)
         self.diff_data = diff_data
-        self.current_index = 0
+        self._tree_items: List[tuple] = []  # (tree_item, data_or_node)
 
         self.setWindowTitle("Review Changes")
         self.resize(1000, 700)
         self._setup_ui()
         self._apply_style()
-
-        if self.diff_data:
-            self._load_item(0)
+        self._populate_tree()
 
     @classmethod
     def from_report(cls, report, parent=None):
@@ -227,7 +249,7 @@ class DiffDialog(QDialog):
         toolbar_layout.addWidget(stats_label)
 
         def add_dot_stat(color, count):
-            dot = QLabel("●")
+            dot = QLabel("\u25cf")
             dot.setStyleSheet(f"color: {color}; margin-left: 10px;")
             toolbar_layout.addWidget(dot)
             toolbar_layout.addWidget(QLabel(str(count)))
@@ -256,12 +278,14 @@ class DiffDialog(QDialog):
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
 
-        # Sidebar
-        self.sidebar = QListWidget()
+        # Sidebar tree
+        self.sidebar = QTreeWidget()
         self.sidebar.setObjectName("sidebar")
-        self.sidebar.setFixedWidth(200)
-        self.sidebar.currentRowChanged.connect(self._load_item)
-        self._populate_sidebar()
+        self.sidebar.setFixedWidth(260)
+        self.sidebar.setHeaderHidden(True)
+        self.sidebar.setAnimated(True)
+        self.sidebar.setIndentation(16)
+        self.sidebar.currentItemChanged.connect(self._on_item_changed)
         content_layout.addWidget(self.sidebar)
 
         # Border
@@ -284,9 +308,9 @@ class DiffDialog(QDialog):
         header_layout.setContentsMargins(20, 10, 20, 10)
 
         title_layout = QVBoxLayout()
-        self.header_title = QLabel("Note ID")
+        self.header_title = QLabel("Select an item")
         self.header_title.setObjectName("headerTitle")
-        self.header_subtitle = QLabel("Deck Path")
+        self.header_subtitle = QLabel("")
         self.header_subtitle.setObjectName("headerSubtitle")
         title_layout.addWidget(self.header_title)
         title_layout.addWidget(self.header_subtitle)
@@ -294,7 +318,7 @@ class DiffDialog(QDialog):
 
         header_layout.addStretch()
 
-        self.change_counts = QLabel("+0 / -0")
+        self.change_counts = QLabel("")
         self.change_counts.setObjectName("changeCounts")
         header_layout.addWidget(self.change_counts)
 
@@ -309,28 +333,6 @@ class DiffDialog(QDialog):
         content_layout.addWidget(diff_panel)
         main_layout.addWidget(content_widget, 1)
 
-        # Footer
-        self.footer = QFrame()
-        self.footer.setObjectName("footer")
-        self.footer.setFixedHeight(40)
-        footer_layout = QHBoxLayout(self.footer)
-        footer_layout.setContentsMargins(15, 0, 15, 0)
-
-        self.counter_label = QLabel("0 of 0 changes")
-        footer_layout.addWidget(self.counter_label)
-
-        footer_layout.addStretch()
-
-        self.prev_btn = QPushButton("Prev")
-        self.prev_btn.clicked.connect(self._prev_item)
-        footer_layout.addWidget(self.prev_btn)
-
-        self.next_btn = QPushButton("Next")
-        self.next_btn.clicked.connect(self._next_item)
-        footer_layout.addWidget(self.next_btn)
-
-        main_layout.addWidget(self.footer)
-
     def _apply_style(self):
         is_dark = mw.pm.night_mode() if mw else False
         bg_color = "#1a1a1a" if is_dark else "#ffffff"
@@ -342,12 +344,12 @@ class DiffDialog(QDialog):
         qss = f"""
             QDialog {{ background-color: {bg_color}; color: {text_color}; }}
             #toolbar {{ border-bottom: 1px solid {border_color}; background-color: {bg_color}; }}
-            #footer {{ border-top: 1px solid {border_color}; background-color: {bg_color}; }}
-            #sidebar {{ border: none; background-color: {bg_color}; outline: none; }}
-            #sidebar::item {{ border-bottom: 1px solid {border_color}; }}
+            #sidebar {{ border: none; background-color: {bg_color}; outline: none;
+                       font-size: 12px; }}
+            #sidebar::item {{ padding: 4px 8px; }}
             #sidebar::item:selected {{
                 background-color: {active_bg};
-                border-left: 2px solid {text_color};
+                border-left: 2px solid #3498db;
             }}
             #panelBorder {{ background-color: {border_color}; }}
             #diffHeader {{ border-bottom: 1px solid {border_color}; background-color: {bg_color}; }}
@@ -359,11 +361,6 @@ class DiffDialog(QDialog):
             #discardBtn {{ background-color: transparent; border: 1px solid {border_color}; padding: 4px 12px; border-radius: 4px; color: {text_color}; }}
             #commitBtn {{ background-color: #3498db; color: white; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold; }}
             #commitBtn:hover {{ background-color: #2980b9; }}
-
-            .sectionLabel {{ color: {muted_color}; font-size: 10px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; padding: 10px 12px 5px 12px; }}
-
-            #idLabel {{ color: {text_color}; font-weight: 500; }}
-            #subLabel {{ color: {muted_color}; font-size: 10px; }}
         """
         self.setStyleSheet(qss)
 
@@ -381,112 +378,85 @@ class DiffDialog(QDialog):
         """
         self.diff_browser.document().setDefaultStyleSheet(diff_qss)
 
-    def _populate_sidebar(self):
-        _logger.info(
-            "Populating DiffDialog sidebar with %d items", len(self.diff_data)
-        )
+    def _populate_tree(self):
         notes = [d for d in self.diff_data if d["type"] == "note"]
         templates = [d for d in self.diff_data if d["type"] == "template"]
 
-        self.sidebar_map = []
-
-        MAX_WIDGETS = 500
-        total_selectable = 0
+        self._tree_items = []
 
         if notes:
-            header = QListWidgetItem("NOTE CONTENT")
-            header.setFlags(Qt.ItemFlag.NoItemFlags)
-            header.setSizeHint(QSize(0, 30))
-            self.sidebar.addItem(header)
-            lbl = QLabel("  NOTE CONTENT")
-            lbl.setProperty("class", "sectionLabel")
-            self.sidebar.setItemWidget(header, lbl)
-
-            for item_idx, item in enumerate(self.diff_data):
-                if item["type"] != "note":
-                    continue
-
-                self.sidebar_map.append(item_idx)
-                li = QListWidgetItem()
-                li.setSizeHint(QSize(0, 50))
-                li.setData(Qt.ItemDataRole.UserRole, total_selectable)
-                li.setData(Qt.ItemDataRole.UserRole + 1, item_idx)
-
-                self.sidebar.addItem(li)
-                if total_selectable < MAX_WIDGETS:
-                    self.sidebar.setItemWidget(
-                        li, SidebarItemWidget(item)
-                    )
-                else:
-                    li.setText(f"Note {item['id']}")
-
-                total_selectable += 1
+            decks_root = QTreeWidgetItem(self.sidebar, ["Decks"])
+            decks_root.setFlags(decks_root.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            decks_root.setExpanded(True)
+            self._build_deck_tree_nodes(notes, decks_root)
 
         if templates:
-            if notes:
-                divider = QListWidgetItem()
-                divider.setFlags(Qt.ItemFlag.NoItemFlags)
-                divider.setSizeHint(QSize(0, 1))
-                self.sidebar.addItem(divider)
+            nt_root = QTreeWidgetItem(self.sidebar, ["Notetypes"])
+            nt_root.setFlags(nt_root.flags() & ~Qt.ItemFlag.ItemIsSelectable)
+            nt_root.setExpanded(True)
+            for item in templates:
+                add, rem = _count_lines(item)
+                label = f"{item['id']}  +{add}/-{rem}"
+                leaf = QTreeWidgetItem(nt_root, [label])
+                leaf.setData(0, Qt.ItemDataRole.UserRole, item)
+                leaf.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+                self._tree_items.append((leaf, item))
 
-            header = QListWidgetItem("TEMPLATES")
-            header.setFlags(Qt.ItemFlag.NoItemFlags)
-            header.setSizeHint(QSize(0, 30))
-            self.sidebar.addItem(header)
-            lbl = QLabel("  TEMPLATES")
-            lbl.setProperty("class", "sectionLabel")
-            self.sidebar.setItemWidget(header, lbl)
+        if self._tree_items:
+            self.sidebar.setCurrentItem(self._tree_items[0][0])
 
-            for item_idx, item in enumerate(self.diff_data):
-                if item["type"] != "template":
-                    continue
+    def _build_deck_tree_nodes(self, notes: List[dict], parent: QTreeWidgetItem):
+        tree = _build_deck_tree(notes)
 
-                self.sidebar_map.append(item_idx)
-                li = QListWidgetItem()
-                li.setSizeHint(QSize(0, 50))
-                li.setData(Qt.ItemDataRole.UserRole, total_selectable)
-                li.setData(Qt.ItemDataRole.UserRole + 1, item_idx)
+        def add_children(node: dict, parent_item: QTreeWidgetItem):
+            for name in sorted(node["children"]):
+                child = node["children"][name]
+                label = f"{name}  +{child['added']}/-{child['removed']} ({child['note_count']})"
+                item = QTreeWidgetItem(parent_item, [label])
+                item.setData(0, Qt.ItemDataRole.UserRole, child)
+                item.setData(0, Qt.ItemDataRole.UserRole + 1, False)
+                item.setChildIndicatorPolicy(
+                    QTreeWidgetItem.ChildIndicatorPolicy.ShowIndicator
+                )
+                if child["children"]:
+                    item.setExpanded(False)
+                add_children(child, item)
+                for note_item in child["notes"]:
+                    n_add, n_rem = _count_lines(note_item)
+                    n_label = f"  {note_item['id']}  +{n_add}/-{n_rem}"
+                    leaf = QTreeWidgetItem(item, [n_label])
+                    leaf.setData(0, Qt.ItemDataRole.UserRole, note_item)
+                    leaf.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+                    self._tree_items.append((leaf, note_item))
 
-                self.sidebar.addItem(li)
-                if total_selectable < MAX_WIDGETS:
-                    self.sidebar.setItemWidget(
-                        li, SidebarItemWidget(item)
-                    )
-                else:
-                    li.setText(item['id'])
+        add_children(tree, parent)
 
-                total_selectable += 1
+    def _on_item_changed(self, current, previous):
+        if current is None:
+            return
+        data = current.data(0, Qt.ItemDataRole.UserRole)
+        is_leaf = current.data(0, Qt.ItemDataRole.UserRole + 1)
 
-        _logger.info("Sidebar population complete")
-
-    def _load_item(self, sidebar_row):
-        item = self.sidebar.item(sidebar_row)
-        if not item or not (item.flags() & Qt.ItemFlag.ItemIsSelectable):
+        if data is None:
+            self.diff_browser.setHtml("")
+            self.header_title.setText("")
+            self.header_subtitle.setText("")
+            self.change_counts.setText("")
             return
 
-        selectable_idx = item.data(Qt.ItemDataRole.UserRole)
-        data_idx = item.data(Qt.ItemDataRole.UserRole + 1)
-
-        if data_idx is None:
-            return
-
-        self.current_index = selectable_idx
-        data = self.diff_data[data_idx]
-
-        _logger.debug("Loading item %d (id: %s)", data_idx, data["id"])
-
-        self.header_title.setText(str(data["id"]))
-        self.header_subtitle.setText(
-            data.get("deck") or data.get("notetype") or ""
-        )
-
-        self._render_diff(data)
-
-        self.counter_label.setText(
-            f"{self.current_index + 1} of {len(self.diff_data)} changes"
-        )
-        self.prev_btn.setEnabled(self.current_index > 0)
-        self.next_btn.setEnabled(self.current_index < len(self.diff_data) - 1)
+        if is_leaf:
+            self.header_title.setText(str(data.get("id", "")))
+            self.header_subtitle.setText(
+                data.get("deck") or data.get("notetype") or data.get("type", "")
+            )
+            self._render_diff(data)
+        else:
+            self.header_title.setText(data.get("name", ""))
+            self.header_subtitle.setText(
+                f"{data['note_count']} notes  +{data['added']}/-{data['removed']}"
+            )
+            self.change_counts.setText(f"+{data['added']} / -{data['removed']}")
+            self._render_deck_summary(data)
 
     def _render_diff(self, data):
         html = ["<body><table>"]
@@ -568,20 +538,54 @@ class DiffDialog(QDialog):
             f"color: {'#3B6D11' if total_added > 0 else '#888'};"
         )
 
-    def _prev_item(self):
-        if self.current_index > 0:
-            self._select_selectable_item(self.current_index - 1)
+    def _render_deck_summary(self, node: dict):
+        is_dark = mw.pm.night_mode() if mw else False
+        text_color = "#ffffff" if is_dark else "#1a1a1a"
+        muted = "#888888"
+        add_color = "#3B6D11"
+        del_color = "#c0392b"
 
-    def _next_item(self):
-        if self.current_index < len(self.diff_data) - 1:
-            self._select_selectable_item(self.current_index + 1)
+        html = [
+            f'<html><body style="color: {text_color}; font-family: sans-serif; '
+            f'font-size: 13px; margin: 20px;">'
+            f'<h2>{node["name"] or "Decks"}</h2>'
+            f'<p style="color: {muted};">'
+            f'{node["note_count"]} note{"s" if node["note_count"] != 1 else ""} changed'
+            f' &mdash; '
+            f'<span style="color: {add_color};">+{node["added"]}</span> / '
+            f'<span style="color: {del_color};">-{node["removed"]}</span> lines'
+            f'</p>'
+        ]
 
-    def _select_selectable_item(self, target_data_idx):
-        current_selectable_idx = 0
-        for i in range(self.sidebar.count()):
-            li = self.sidebar.item(i)
-            if li.flags() & Qt.ItemFlag.ItemIsSelectable:
-                if current_selectable_idx == target_data_idx:
-                    self.sidebar.setCurrentRow(i)
-                    return
-                current_selectable_idx += 1
+        if node["children"]:
+            html.append('<ul>')
+            for name in sorted(node["children"]):
+                child = node["children"][name]
+                html.append(
+                    f'<li><strong>{name}</strong> &mdash; '
+                    f'{child["note_count"]} notes, '
+                    f'<span style="color: {add_color};">+{child["added"]}</span> / '
+                    f'<span style="color: {del_color};">-{child["removed"]}</span>'
+                    f'</li>'
+                )
+            html.append('</ul>')
+
+        if node["notes"]:
+            html.append(f'<p style="color: {muted};">Notes in this deck:</p><ul>')
+            for item in node["notes"]:
+                n_add, n_rem = _count_lines(item)
+                status_dot = {
+                    "added": "+", "deleted": "-", "modified": "~"
+                }.get(item["status"], "?")
+                html.append(
+                    f'<li>{status_dot} {item["id"]} '
+                    f'(<span style="color: {add_color};">+{n_add}</span> / '
+                    f'<span style="color: {del_color};">-{n_rem}</span>)'
+                    f' &mdash; {item["notetype"]}</li>'
+                )
+            html.append('</ul>')
+
+        html.append('</body></html>')
+        self.diff_browser.setHtml("".join(html))
+        self.change_counts.setText(f"+{node['added']} / -{node['removed']}")
+        self.change_counts.setStyleSheet(f"color: {add_color};")

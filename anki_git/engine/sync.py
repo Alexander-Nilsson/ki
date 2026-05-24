@@ -21,6 +21,7 @@ from anki_git.engine.checksums import load_meta, save_meta
 from anki_git.engine.conflict import (
     detect_conflicts,
     resolve_conflicts,
+    enrich_conflicts_with_content,
     merge_notetypes,
     ConflictType,
 )
@@ -46,6 +47,26 @@ _logger = logging.getLogger("anki_git")
 NOTETYPES_DIR = "notetypes"
 DECKS_DIR = "decks"
 META_DIR = ".ki"
+
+
+@dataclass
+class SyncPreview:
+    notes_to_export: int = 0
+    notes_to_import: int = 0
+    notes_to_delete_from_git: int = 0
+    notes_to_delete_from_anki: int = 0
+    conflicts_unresolved: int = 0
+    notetypes_to_sync: int = 0
+
+    @property
+    def has_changes(self) -> bool:
+        return (
+            self.notes_to_export > 0
+            or self.notes_to_import > 0
+            or self.notes_to_delete_from_git > 0
+            or self.notes_to_delete_from_anki > 0
+            or self.notetypes_to_sync > 0
+        )
 
 
 @dataclass
@@ -99,6 +120,7 @@ def sync_collection(
     remote_url: str = "",
     progress_callback: Callable = None,
     media_strategy: str = "none",
+    preview_callback: Callable = None,
 ) -> SyncResult:
     _start = time.perf_counter()
     result = SyncResult()
@@ -126,6 +148,7 @@ def sync_collection(
     report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
 
     resolve_conflicts(report, sync_mode)
+    enrich_conflicts_with_content(report, col, repo_path)
 
     if report.has_conflicts and conflict_callback and sync_mode == SyncMode.ALWAYS_ASK:
         unresolved = [c for c in report.conflicts if not c.resolved]
@@ -160,6 +183,36 @@ def sync_collection(
             delete_from_anki_nids.add(c.nid)
         if c.conflict_type == ConflictType.DELETE_FROM_GIT:
             delete_from_git_nids.add(c.nid)
+
+    # Show preview before applying anything
+    if preview_callback:
+        anki_notetypes_preview: Dict[str, Notetype] = {}
+        for nt_dict in col.models.all():
+            nt = Notetype.from_anki_dict(nt_dict)
+            anki_notetypes_preview[nt.name] = nt
+        repo_notetypes_preview = read_all_notetypes(repo_path / NOTETYPES_DIR)
+        nt_to_sync = 0
+        for name in set(anki_notetypes_preview) | set(repo_notetypes_preview):
+            anki_nt = anki_notetypes_preview.get(name)
+            git_nt = repo_notetypes_preview.get(name)
+            if anki_nt and git_nt:
+                if anki_nt != git_nt:
+                    nt_to_sync += 1
+            elif anki_nt or git_nt:
+                nt_to_sync += 1
+
+        preview = SyncPreview(
+            notes_to_export=len(notes_to_export),
+            notes_to_import=len(notes_to_import_nids),
+            notes_to_delete_from_git=len(delete_from_git_nids),
+            notes_to_delete_from_anki=len(delete_from_anki_nids),
+            conflicts_unresolved=result.conflicts_unresolved,
+            notetypes_to_sync=nt_to_sync,
+        )
+        if preview.has_changes and not preview_callback(preview):
+            _logger.info("Sync cancelled by user preview")
+            result.duration_seconds = time.perf_counter() - _start
+            return result
 
     # Build notes lookup once for O(n) import
     notes_lookup = import_helpers.load_all_repo_notes(repo_path)

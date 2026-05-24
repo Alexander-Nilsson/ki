@@ -132,11 +132,45 @@ def sync_action() -> None:
             conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
         )
 
+        def preview_handler(preview):
+            event_preview = threading.Event()
+            result_preview = [False]
+
+            def on_main():
+                from aqt.qt import QMessageBox
+                parts = []
+                if preview.notes_to_export:
+                    parts.append(f"Notes to push to repo: {preview.notes_to_export}")
+                if preview.notes_to_import:
+                    parts.append(f"Notes to pull from repo: {preview.notes_to_import}")
+                if preview.notes_to_delete_from_git:
+                    parts.append(f"Notes to delete from repo: {preview.notes_to_delete_from_git}")
+                if preview.notes_to_delete_from_anki:
+                    parts.append(f"Notes to delete from Anki: {preview.notes_to_delete_from_anki}")
+                if preview.notetypes_to_sync:
+                    parts.append(f"Notetypes to sync: {preview.notetypes_to_sync}")
+                if preview.conflicts_unresolved:
+                    parts.append(f"Unresolved conflicts (will be skipped): {preview.conflicts_unresolved}")
+
+                msg = "\n".join(parts) + "\n\nProceed with sync?"
+                result_preview[0] = QMessageBox.question(
+                    mw, "AnkiGit Sync Preview",
+                    msg,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                ) == QMessageBox.StandardButton.Yes
+                event_preview.set()
+            mw.taskman.run_on_main(on_main)
+            event_preview.wait()
+            return result_preview[0]
+
+        preview_cb = preview_handler if not config.background_mode else None
+
         return sync_collection(
             col,
             repo_path,
             sync_mode=sync_mode,
             conflict_callback=conflict_cb,
+            preview_callback=preview_cb,
             remote_url=(
                 config.remote_url if config.auto_push_after_snapshot else ""
             ),
@@ -469,6 +503,31 @@ def import_action() -> None:
     ).run_in_background()
 
 
+def history_action() -> None:
+    from aqt import mw
+    from aqt.qt import QMessageBox
+    from anki_git.ui import HistoryDialog
+
+    config = load_config()
+    if not config.repo_path:
+        QMessageBox.warning(
+            mw, "AnkiGit",
+            "Please set a repository path in "
+            "Tools > AnkiGit > Settings first."
+        )
+        return
+    repo_path = Path(config.repo_path)
+    if not (repo_path / ".git").exists():
+        QMessageBox.warning(
+            mw, "AnkiGit",
+            "No Git repository found. Take a snapshot first."
+        )
+        return
+
+    dialog = HistoryDialog(repo_path, mw)
+    dialog.exec()
+
+
 def settings_action() -> None:
     from aqt import mw
     from anki_git.ui import SettingsDialog
@@ -506,6 +565,12 @@ def show_menu() -> None:
     import_act.triggered.connect(import_action)
     parent_menu.addAction(import_act)
 
+    parent_menu.addSeparator()
+
+    history_act = QAction("View History", mw)
+    history_act.triggered.connect(history_action)
+    parent_menu.addAction(history_act)
+
     settings_act = QAction("Settings...", mw)
     settings_act.triggered.connect(settings_action)
     parent_menu.addAction(settings_act)
@@ -517,6 +582,72 @@ def show_menu() -> None:
 _menu_shown = False
 
 
+def _run_background_sync(config: KiSyncConfig) -> None:
+    """Run sync silently with no user dialogs. Only logs errors."""
+    from aqt import mw
+    from aqt.operations import QueryOp
+    from anki_git.engine.sync import sync_collection
+
+    repo_path = Path(config.repo_path)
+
+    def do_sync(col):
+        result = sync_collection(
+            col, repo_path,
+            sync_mode=config.sync_mode,
+            conflict_callback=None,
+            remote_url=(
+                config.remote_url if config.auto_push_after_snapshot else ""
+            ),
+            media_strategy=config.media_strategy,
+        )
+        if result.error:
+            _logger.error("Background sync failed: %s", result.error)
+        else:
+            _logger.info(
+                "Background sync: %d notes exported, %d notes imported",
+                result.notes_exported, result.notes_imported,
+            )
+        return result
+
+    QueryOp(
+        parent=mw,
+        op=do_sync,
+        success=lambda _: None,
+    ).run_in_background()
+
+
+def _run_background_export(config: KiSyncConfig) -> None:
+    """Run exporter silently with no user dialogs. Only logs errors."""
+    from aqt import mw
+    from aqt.operations import QueryOp
+    from anki_git.engine.exporter import export_collection
+
+    repo_path = Path(config.repo_path)
+
+    def do_export(col):
+        result = export_collection(
+            col, repo_path,
+            remote_url=(
+                config.remote_url if config.auto_push_after_snapshot else ""
+            ),
+            media_strategy=config.media_strategy,
+        )
+        if result.error:
+            _logger.error("Background export failed: %s", result.error)
+        else:
+            _logger.info(
+                "Background export: %d notes changed",
+                result.notes_changed,
+            )
+        return result
+
+    QueryOp(
+        parent=mw,
+        op=do_export,
+        success=lambda _: None,
+    ).run_in_background()
+
+
 def on_profile_open() -> None:
     global _menu_shown
     if not _menu_shown:
@@ -524,32 +655,38 @@ def on_profile_open() -> None:
         _menu_shown = True
     config = load_config()
     if config.auto_sync_on_startup and config.repo_path:
-        sync_action()
+        if config.background_mode:
+            _run_background_sync(config)
+        else:
+            sync_action()
 
 
 def on_profile_close() -> None:
     config = load_config()
     if config.auto_snapshot_on_close and config.repo_path:
-        try:
-            from aqt import mw
-            if mw is not None and mw.col is not None:
-                repo_path = Path(config.repo_path)
-                mw.progress.start(
-                    label="Auto-snapshotting...", immediate=True
-                )
-                try:
-                    export_collection(
-                        mw.col, repo_path,
-                        media_strategy=config.media_strategy,
-                        progress_callback=lambda text: (
-                            mw.progress.update(label=text),
-                            mw.app.processEvents()
-                        )
+        if config.background_mode:
+            _run_background_export(config)
+        else:
+            try:
+                from aqt import mw
+                if mw is not None and mw.col is not None:
+                    repo_path = Path(config.repo_path)
+                    mw.progress.start(
+                        label="Auto-snapshotting...", immediate=True
                     )
-                finally:
-                    mw.progress.finish()
-        except Exception as e:
-            _logger.warning("Auto-snapshot on close failed: %s", e)
+                    try:
+                        export_collection(
+                            mw.col, repo_path,
+                            media_strategy=config.media_strategy,
+                            progress_callback=lambda text: (
+                                mw.progress.update(label=text),
+                                mw.app.processEvents()
+                            )
+                        )
+                    finally:
+                        mw.progress.finish()
+            except Exception as e:
+                _logger.warning("Auto-snapshot on close failed: %s", e)
 
 
 def on_note_change(note) -> None:

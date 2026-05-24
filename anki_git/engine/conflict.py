@@ -18,7 +18,9 @@ Conflict cases:
   7. Deleted in one, changed in other -> conflict
 """
 
+import json
 from enum import Enum
+from pathlib import Path
 from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 
@@ -226,6 +228,38 @@ def merge_notetypes(
         deck_presets=anki_nt.deck_presets,
     )
     return merged, conflicts
+
+
+def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path) -> None:
+    """Populate anki_content/git_content on true CONFLICT notes.
+
+    Fetches the actual field content from both sides so the UI can render
+    a side-by-side comparison. Content is stored as JSON dict of
+    {field_name: field_value} for structured parsing.
+    """
+    from anki_git.engine.import_helpers import load_all_repo_notes
+
+    repo_notes = load_all_repo_notes(repo_path)
+
+    for c in report.conflicts:
+        if c.conflict_type != ConflictType.CONFLICT:
+            continue
+
+        try:
+            note_obj = col.get_note(c.nid)
+            c.anki_content = json.dumps(
+                dict(note_obj.items()), ensure_ascii=False
+            )
+        except Exception:
+            c.anki_content = "{}"
+
+        repo_note = repo_notes.get(c.nid)
+        if repo_note:
+            c.git_content = json.dumps(
+                repo_note.fields, ensure_ascii=False
+            )
+        else:
+            c.git_content = "{}"
 
 
 def detect_conflicts(

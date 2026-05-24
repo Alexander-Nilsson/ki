@@ -38,5 +38,10 @@
     "type": "string",
     "value": "INFO",
     "description": "Logging level (DEBUG, INFO, WARNING, ERROR)"
+  },
+  "background_mode": {
+    "type": "boolean",
+    "value": false,
+    "description": "Run auto operations silently in the background without dialogs"
   }
 }

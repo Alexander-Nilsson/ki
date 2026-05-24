@@ -34,8 +34,33 @@ class ImportResult:
     conflict_report: object = None
 
 
-def preview_import(repo_path: Path) -> ImportResult:
-    """Analyze what would change without applying anything (dry-run)."""
+def preview_import(repo_path: Path, col=None) -> ImportResult:
+    """Analyze what would change without applying anything (dry-run).
+
+    If col is provided, performs real diffing via compute_import_diff.
+    Otherwise falls back to simple file counting.
+    """
+    if col is not None:
+        from anki_git.engine.diff import compute_import_diff
+        report = compute_import_diff(col, repo_path)
+        created = sum(1 for d in report.note_diffs if d.change_type == "added")
+        modified = sum(1 for d in report.note_diffs if d.change_type == "modified")
+        deleted = sum(1 for d in report.note_diffs if d.change_type == "deleted")
+        nt_created = sum(1 for d in report.notetype_diffs if d.change_type == "added")
+        nt_modified = sum(1 for d in report.notetype_diffs if d.change_type == "modified")
+        nt_deleted = sum(1 for d in report.notetype_diffs if d.change_type == "deleted")
+        return ImportResult(
+            notes_created=created,
+            notes_updated=modified,
+            notetypes_created=nt_created,
+            notetypes_updated=nt_modified,
+            warnings=[] if not (deleted or nt_deleted) else [
+                f"{deleted} notes would be deleted",
+                f"{nt_deleted} notetypes would be deleted",
+            ],
+        )
+
+    # Fallback: simple file counting without collection access
     from anki_git.formats.notetype_yaml import read_all_notetypes
     from anki_git.formats.notes_md import parse_notes_file
 
@@ -68,7 +93,7 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult
 
     conflict_callback receives a ConflictReport and must return a resolved ConflictReport.
     """
-    from anki_git.engine.conflict import detect_conflicts, ConflictType
+    from anki_git.engine.conflict import detect_conflicts, enrich_conflicts_with_content, ConflictType
     from anki_git.engine.checksums import load_meta, save_meta
 
     anki_checksums = import_helpers.compute_anki_checksums(col)
@@ -77,6 +102,7 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult
     base_checksums = meta.get("note_checksums", {})
 
     report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
+    enrich_conflicts_with_content(report, col, repo_path)
 
     if conflict_callback and report.has_conflicts:
         report = conflict_callback(report)
