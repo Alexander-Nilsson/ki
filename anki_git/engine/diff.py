@@ -28,6 +28,22 @@ class NoteDiff:
     new_tags: List[str] = field(default_factory=list)
     tags_changed: bool = False
 
+    @property
+    def added_lines(self) -> int:
+        return sum(
+            1 for fd in self.field_diffs
+            for l in fd.diff_lines
+            if l.startswith("+") and not l.startswith("+++")
+        )
+
+    @property
+    def deleted_lines(self) -> int:
+        return sum(
+            1 for fd in self.field_diffs
+            for l in fd.diff_lines
+            if l.startswith("-") and not l.startswith("---")
+        )
+
 
 @dataclass
 class NotetypeDiff:
