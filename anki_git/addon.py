@@ -10,13 +10,27 @@ _export_timer = None
 _config = None
 _logger = logging.getLogger("anki_git")
 
-# Setup file logging for debugging
-_log_path = Path(__file__).parent.parent / "anki_git.log"
-_file_handler = logging.FileHandler(_log_path, encoding="utf-8")
-_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-_logger.addHandler(_file_handler)
-_logger.setLevel(logging.DEBUG)
-_logger.info("AnkiGit logger initialized. Logging to %s", _log_path)
+# Setup file logging in the addon data directory
+def _setup_logging():
+    from aqt import mw
+    addon_id = __name__.split(".")[0]
+    # Use Anki's standard addon data directory
+    log_dir = Path(mw.addonManager.addonsFolder()) / addon_id / "user_files"
+    try:
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "anki_git.log"
+        file_handler = logging.FileHandler(log_path, encoding="utf-8")
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        _logger.addHandler(file_handler)
+        _logger.setLevel(logging.DEBUG)
+        _logger.info("AnkiGit logger initialized. Logging to %s", log_path)
+    except Exception as e:
+        # Fallback to console if directory is not writable
+        print(f"AnkiGit: Could not setup file logging: {e}")
+
+aqt = _import("aqt")
+if aqt is not None:
+    _setup_logging()
 
 
 def _import(name):
