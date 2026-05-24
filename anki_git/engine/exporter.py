@@ -180,7 +180,7 @@ def export_collection(
     if notes_changed > 0 or result.notetypes_changed > 0:
         if progress_callback:
             progress_callback("Committing changes...")
-        meta["last_export_time"] = int(datetime.datetime.utcnow().timestamp())
+        meta["last_export_time"] = int(time.time())
         meta["note_checksums"] = note_checksums
         meta["collection_path"] = str(col.path)
         save_meta(repo_path, meta)

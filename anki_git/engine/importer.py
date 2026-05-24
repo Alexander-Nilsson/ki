@@ -124,15 +124,15 @@ def import_from_repo(col, repo_path: Path) -> ImportResult:
     result = ImportResult()
 
     try:
-        col.db.begin()
+        col.db.execute("begin")
         _import_notetypes(col, repo_path, result)
         _import_notes(col, repo_path, result)
-        col.db.commit()
+        col.db.execute("commit")
         _logger.info("Import complete: %d notes, %d notetypes",
                     result.notes_updated + result.notes_created,
                     result.notetypes_updated + result.notetypes_created)
     except Exception as e:
-        col.db.rollback()
+        col.db.execute("rollback")
         _logger.exception("Import failed")
         result.errors.append(str(e))
 
@@ -149,7 +149,14 @@ def _import_notetypes(col, repo_path: Path, result: ImportResult) -> None:
         existing = col.models.by_name(name)
         if existing:
             existing["flds"] = [
-                {"name": f.name, "ord": f.ord, "font": f.font, "size": f.size, "sticky": f.sticky}
+                {
+                    "name": f.name,
+                    "ord": f.ord,
+                    "font": f.font,
+                    "size": f.size,
+                    "sticky": f.sticky,
+                    "rtl": f.rtl,
+                }
                 for f in nt.fields
             ]
             existing["tmpls"] = [
@@ -163,6 +170,7 @@ def _import_notetypes(col, repo_path: Path, result: ImportResult) -> None:
             new_nt = col.models.new(name)
             for f in nt.fields:
                 field = col.models.new_field(f.name)
+                field["rtl"] = f.rtl
                 col.models.add_field(new_nt, field)
             for t in nt.templates:
                 tmpl = col.models.new_template(t.name)
@@ -183,7 +191,7 @@ def _import_notes(col, repo_path: Path, result: ImportResult) -> None:
         for note_data in notes:
             try:
                 existing = col.get_note(note_data.nid)
-            except (ValueError, KeyError):
+            except Exception:
                 existing = None
 
             if existing is not None:

@@ -22,6 +22,8 @@ def _import(name):
 # Setup file logging in the addon data directory
 def _setup_logging():
     from aqt import mw
+    if mw is None or mw.addonManager is None:
+        return
     addon_id = __name__.split(".")[0]
     # Use Anki's standard addon data directory
     log_dir = Path(mw.addonManager.addonsFolder()) / addon_id / "user_files"
@@ -95,13 +97,13 @@ def snapshot_action() -> None:
         report = compute_export_diff(
             col, repo_path,
             progress_callback=lambda text: mw.taskman.run_on_main(
-                lambda: mw.progress.update(label=text, type="sticky")
+                lambda: mw.progress.update(label=text)
             )
         )
         if not report.has_changes:
             return report, None
         
-        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview...", type="sticky"))
+        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
         return report, ui_data
@@ -121,7 +123,7 @@ def snapshot_action() -> None:
                 col, repo_path,
                 remote_url=config.remote_url if config.auto_push_after_snapshot else "",
                 progress_callback=lambda text: mw.taskman.run_on_main(
-                    lambda: mw.progress.update(label=text, type="sticky")
+                    lambda: mw.progress.update(label=text)
                 ),
                 media_strategy=config.media_strategy,
             )
@@ -191,13 +193,13 @@ def import_action() -> None:
         report = compute_import_diff(
             col, repo_path,
             progress_callback=lambda text: mw.taskman.run_on_main(
-                lambda: mw.progress.update(label=text, type="sticky")
+                lambda: mw.progress.update(label=text)
             )
         )
         if not report.has_changes:
             return report, None
         
-        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview...", type="sticky"))
+        mw.taskman.run_on_main(lambda: mw.progress.update(label="Preparing preview..."))
         from anki_git.ui.diff import report_to_diff_data
         ui_data = report_to_diff_data(report)
         return report, ui_data

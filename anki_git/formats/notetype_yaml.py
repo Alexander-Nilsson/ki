@@ -22,12 +22,13 @@ _BlockScalarDumper.add_representer(str, _BlockScalarDumper._represent_str)
 
 
 class NotetypeField:
-    def __init__(self, name: str, ord: int, font: str = "Arial", size: int = 20, sticky: bool = False):
+    def __init__(self, name: str, ord: int, font: str = "Arial", size: int = 20, sticky: bool = False, rtl: bool = False):
         self.name = name
         self.ord = ord
         self.font = font
         self.size = size
         self.sticky = sticky
+        self.rtl = rtl
 
 
 class NotetypeTemplate:
@@ -70,6 +71,7 @@ class Notetype:
                 font=f.get("font", "Arial"),
                 size=f.get("size", 20),
                 sticky=f.get("sticky", False),
+                rtl=f.get("rtl", False),
             )
             for f in d.get("flds", [])
         ]
@@ -106,6 +108,7 @@ class Notetype:
                     "font": f.font,
                     "size": f.size,
                     "sticky": f.sticky,
+                    "rtl": f.rtl,
                 }
                 for f in self.fields
             ],
@@ -136,7 +139,14 @@ class Notetype:
         if d is None:
             raise ValueError("Empty or invalid notetype YAML")
         fields = [
-            NotetypeField(name=f["name"], ord=f.get("ord", i), font=f.get("font", "Arial"), size=f.get("size", 20), sticky=f.get("sticky", False))
+            NotetypeField(
+                name=f["name"],
+                ord=f.get("ord", i),
+                font=f.get("font", "Arial"),
+                size=f.get("size", 20),
+                sticky=f.get("sticky", False),
+                rtl=f.get("rtl", False),
+            )
             for i, f in enumerate(d.get("fields", []))
         ]
         templates = [

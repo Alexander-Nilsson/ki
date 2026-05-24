@@ -488,5 +488,3 @@ class DiffDialog(QDialog):
                     self.sidebar.setCurrentRow(i)
                     return
                 current_selectable_idx += 1
-
-file_path: anki_git/ui/diff.py

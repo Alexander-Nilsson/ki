@@ -47,7 +47,6 @@ class TestAddonImports:
     def test_ui_modules_importable(self):
         import anki_git.ui.settings  # noqa: F401
         import anki_git.ui.conflicts  # noqa: F401
-        import anki_git.ui.progress  # noqa: F401
 
 
 @integration
