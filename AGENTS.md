@@ -56,7 +56,7 @@ uv run python scripts/release.py 0.2.0       # bump version, tag, push
 
 - **Python ≥ 3.13** only.
 - **Version in two places** — update both `pyproject.toml` AND `anki_git/__init__.py`.
-- **`engine/importer.py`** scans for `notes.md` via rglob, but exporter writes `<nid>.md` per note — importer needs updating to match.
+- **`engine/importer.py`** uses `rglob("*.md")` which matches both `<nid>.md` and legacy `notes.md` — `parse_notes_file()` handles both formats.
 - **Menu:** "Sync" (two-way), "Export to Repo (Snapshot)" (one-way), "Import from Repo (Pull)" (one-way), "Settings..."
 - **Flake8 only** — no typechecker. Config in `pyproject.toml`: max-line-length=100, ignores E501/W503.
 - **CI ignores legacy files** that don't exist anymore: `--ignore=tests/test_ki.py --ignore=tests/test_integration.py --ignore=tests/test_package.py --ignore=tests/test_parser.py`.

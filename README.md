@@ -4,20 +4,19 @@
 
 Built on the foundation of [ki](https://github.com/langfield/ki) — reimagined as a proper Anki addon with a clean Qt UI, thread-safe collection access, and three-way merge conflict resolution.
 
-## Status
-
-Working MVP: **Take Snapshot** in Tools → AnkiGit, with progress feedback, per-note file export, and idempotent re-exports.
-
 ## Features
 
 - **Snapshot** — export your entire collection to a Git repo (one Markdown file per note, YAML notetypes)
 - **Incremental export** — only re-export changed notes since the last snapshot
+- **Two-way sync** — bi-directional sync between Anki and repo with change detection
+- **Import** — apply changes from your Git repo back into Anki
+- **Conflict resolution** — three-way merge detection with a Qt dialog and auto-resolve modes
 - **Notetype tracking** — clean YAML export with CSS separated into its own file
-- **Progress feedback** — animated progress bar with step-by-step status during export
+- **Progress feedback** — animated progress bar with step-by-step status during operations
 - **Auto-sync** — debounced auto-export on note changes, snapshot on profile close
-- **Import** — apply changes from your Git repo back into Anki (planned)
-- **Conflict resolution** — three-way merge detection with a Qt dialog (planned)
-- **Remote push** — push your repo to GitHub/GitLab (planned)
+- **Background mode** — silent operation without dialogs for automated workflows
+- **Remote push** — auto-push to GitHub/GitLab after snapshot
+- **Diff preview** — git-style diff viewer before export/import
 
 ## Architecture
 
@@ -75,4 +74,4 @@ python3 -m pytest tests/                     # all tests (needs anki/aqt)
 
 ## License
 
-AGPL-3.0 — derived from [ki](https://github.com/langfield/ki).
+AGPL-3.0-only — derived from [ki](https://github.com/langfield/ki).

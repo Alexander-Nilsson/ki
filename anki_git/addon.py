@@ -112,6 +112,11 @@ def sync_action() -> None:
         QMessageBox.critical(mw, "AnkiGit", "No collection is open.")
         return
 
+    if config.background_mode:
+        _logger.info("Background sync triggered from menu")
+        _run_background_sync(config)
+        return
+
     repo_path = Path(config.repo_path)
 
     def do_sync(col):

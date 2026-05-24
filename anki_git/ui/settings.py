@@ -1,10 +1,12 @@
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
     QPushButton, QCheckBox, QComboBox, QSpinBox, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox, QLabel,
+    QFileDialog, QFormLayout, QGroupBox, QLabel, QApplication,
 )
+from git import GitCommandError
 
 from anki_git.config import KiSyncConfig, SYNC_MODE_CHOICES
+from anki_git.engine.git_ops import open_repo, get_existing_remote_url
 
 
 class SettingsDialog:
@@ -29,6 +31,14 @@ class SettingsDialog:
         repo_path_layout.addWidget(self._repo_path_input)
         repo_path_layout.addWidget(browse_btn)
         repo_layout.addRow("Repo path:", repo_path_layout)
+        remote_layout = QHBoxLayout()
+        self._check_remote_btn = QPushButton("Check Remote", self.dialog)
+        self._check_remote_btn.clicked.connect(self._check_remote)
+        self._remote_check_label = QLabel("", self.dialog)
+        remote_layout.addWidget(self._check_remote_btn)
+        remote_layout.addWidget(self._remote_check_label)
+        remote_layout.addStretch()
+        repo_layout.addRow("Remote:", remote_layout)
         layout.addWidget(repo_group)
 
         sync_group = QGroupBox("Sync Behavior", self.dialog)
@@ -118,6 +128,44 @@ class SettingsDialog:
         path = QFileDialog.getExistingDirectory(self.dialog, "Select Git Repository Path")
         if path:
             self._repo_path_input.setText(path)
+
+    def _check_remote(self):
+        from pathlib import Path
+
+        path_str = self._repo_path_input.text().strip()
+        if not path_str:
+            self._remote_check_label.setText("No repo path set")
+            return
+
+        repo_path = Path(path_str)
+        repo = open_repo(repo_path)
+        if repo is None:
+            self._remote_check_label.setText("Not a Git repository")
+            return
+
+        url = get_existing_remote_url(repo)
+        if not url:
+            self._remote_check_label.setText("No remote 'origin' configured")
+            return
+
+        self._check_remote_btn.setEnabled(False)
+        self._check_remote_btn.setText("Verifying...")
+        self._remote_check_label.setText("")
+        QApplication.processEvents()
+
+        try:
+            repo.git.ls_remote("origin")
+            self._remote_check_label.setText(f"Connected: {url}")
+            self._remote_check_label.setStyleSheet("color: green;")
+        except GitCommandError as e:
+            self._remote_check_label.setText(f"Cannot reach remote: {str(e)[:80]}")
+            self._remote_check_label.setStyleSheet("color: red;")
+        except Exception as e:
+            self._remote_check_label.setText(f"Error: {str(e)[:80]}")
+            self._remote_check_label.setStyleSheet("color: red;")
+        finally:
+            self._check_remote_btn.setEnabled(True)
+            self._check_remote_btn.setText("Check Remote")
 
     def exec(self):
         return self.dialog.exec()
