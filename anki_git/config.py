@@ -20,9 +20,8 @@ SYNC_MODE_CHOICES = [
 @dataclass
 class KiSyncConfig:
     repo_path: str = ""
-    auto_sync_on_startup: bool = False
-    auto_snapshot_on_close: bool = False
-    debounce_delay_ms: int = 2000
+    auto_sync_on_startup: bool = True
+    auto_snapshot_on_close: bool = True
     media_strategy: str = "none"
     auto_push_after_snapshot: bool = False
     log_level: str = "INFO"

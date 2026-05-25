@@ -28,9 +28,8 @@ class TestKiSyncConfig:
     def test_defaults(self):
         cfg = KiSyncConfig()
         assert cfg.repo_path == ""
-        assert cfg.auto_sync_on_startup is False
-        assert cfg.auto_snapshot_on_close is False
-        assert cfg.debounce_delay_ms == 2000
+        assert cfg.auto_sync_on_startup is True
+        assert cfg.auto_snapshot_on_close is True
         assert cfg.media_strategy == "none"
         assert cfg.log_level == "INFO"
         assert cfg.sync_mode == SyncMode.ALWAYS_ASK
@@ -56,9 +55,8 @@ class TestKiSyncConfig:
     def test_to_dict_roundtrip(self):
         cfg1 = KiSyncConfig(
             repo_path="/tmp/repo",
-            auto_sync_on_startup=True,
-            auto_snapshot_on_close=True,
-            debounce_delay_ms=3000,
+            auto_sync_on_startup=False,
+            auto_snapshot_on_close=False,
             media_strategy="symlink",
             log_level="DEBUG",
             sync_mode=SyncMode.PREFER_ANKI,

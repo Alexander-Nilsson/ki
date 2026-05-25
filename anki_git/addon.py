@@ -6,7 +6,7 @@ from anki_git.config import KiSyncConfig, SyncMode
 from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
 
-_export_timer = None
+
 _config = None
 _logger = logging.getLogger("anki_git")
 
@@ -687,50 +687,9 @@ def on_profile_close() -> None:
                 _logger.warning("Auto-snapshot on close failed: %s", e)
 
 
-def on_note_change(note) -> None:
-    global _export_timer
-    from aqt.qt import QTimer
-
-    config = load_config()
-    if not config.repo_path:
-        return
-    if _export_timer is not None:
-        _export_timer.stop()
-    _export_timer = QTimer()
-    _export_timer.setSingleShot(True)
-    _export_timer.timeout.connect(_debounced_export)
-    _export_timer.start(config.debounce_delay_ms)
-
-
-def _debounced_export() -> None:
-    config = load_config()
-    from aqt import mw
-    if mw is None or mw.col is None or not config.repo_path:
-        return
-    try:
-        repo_path = Path(config.repo_path)
-        from aqt.operations import QueryOp
-        QueryOp(
-            parent=mw,
-            op=lambda col: export_collection(
-                col, repo_path,
-                media_strategy=config.media_strategy,
-            ),
-            success=lambda _: None
-        ).run_in_background()
-    except Exception as e:
-        _logger.warning("Debounced export failed: %s", e)
-
-
-def _on_operation(changes, handler) -> None:
-    if changes.note or changes.notetype:
-        on_note_change(None)
-
-
 def init_addon() -> None:
     if _import("aqt") is not None:
         _setup_logging()
     from aqt import gui_hooks
     gui_hooks.profile_did_open.append(on_profile_open)
     gui_hooks.profile_will_close.append(on_profile_close)
-    gui_hooks.operation_did_execute.append(_on_operation)

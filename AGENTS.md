@@ -41,7 +41,7 @@ anki_git/
 - **Pre-operation backups** before any import/pull.
 - **Wrap imports** in `col.db.begin()` / `.commit()` / `.rollback()`.
 - **Match notes by nid**, notetypes by name.
-- **Debounce auto-export** with 2s QTimer.
+- **Auto-snapshot on close**, **auto-sync on startup** — both default on. No mid-session auto-export.
 
 ## Commands
 

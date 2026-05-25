@@ -1,6 +1,6 @@
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QCheckBox, QComboBox, QSpinBox, QDialogButtonBox,
+    QPushButton, QCheckBox, QComboBox, QDialogButtonBox,
     QFileDialog, QFormLayout, QGroupBox, QLabel, QApplication,
 )
 from git import GitCommandError
@@ -60,14 +60,6 @@ class SettingsDialog(QDialog):
         self._auto_push_cb = QCheckBox("Auto-push after snapshot", self)
         sync_layout.addRow(self._auto_push_cb)
 
-        debounce_layout = QHBoxLayout()
-        self._debounce_input = QSpinBox(self)
-        self._debounce_input.setRange(500, 10000)
-        self._debounce_input.setSingleStep(500)
-        self._debounce_input.setSuffix(" ms")
-        debounce_layout.addWidget(self._debounce_input)
-        sync_layout.addRow("Debounce delay:", debounce_layout)
-
         self._sync_mode_combo = QComboBox(self)
         for value, label in SYNC_MODE_CHOICES:
             self._sync_mode_combo.addItem(label, value)
@@ -105,7 +97,7 @@ class SettingsDialog(QDialog):
         self._auto_close_cb.setChecked(self.config.auto_snapshot_on_close)
         self._bg_mode_cb.setChecked(self.config.background_mode)
         self._auto_push_cb.setChecked(self.config.auto_push_after_snapshot)
-        self._debounce_input.setValue(self.config.debounce_delay_ms)
+
         idx = self._media_strategy_combo.findText(self.config.media_strategy)
         if idx >= 0:
             self._media_strategy_combo.setCurrentIndex(idx)
@@ -119,7 +111,6 @@ class SettingsDialog(QDialog):
         self.config.auto_snapshot_on_close = self._auto_close_cb.isChecked()
         self.config.background_mode = self._bg_mode_cb.isChecked()
         self.config.auto_push_after_snapshot = self._auto_push_cb.isChecked()
-        self.config.debounce_delay_ms = self._debounce_input.value()
         self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.sync_mode = self._sync_mode_combo.currentData()
         self.accept()

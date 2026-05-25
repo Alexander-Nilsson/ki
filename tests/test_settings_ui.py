@@ -13,7 +13,6 @@ class TestSettingsDialogLogic:
             repo_path="/tmp/test",
             auto_sync_on_startup=True,
             auto_snapshot_on_close=False,
-            debounce_delay_ms=3000,
             media_strategy="symlink",
             log_level="DEBUG",
             sync_mode=SyncMode.PREFER_REPO,
