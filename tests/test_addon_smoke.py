@@ -25,6 +25,7 @@ if "DISPLAY" not in os.environ and "QT_QPA_PLATFORM" not in os.environ:
 
 
 @integration
+@pytest.mark.integration
 class TestAddonImports:
     """Verify all addon modules can be imported."""
 
@@ -50,6 +51,7 @@ class TestAddonImports:
 
 
 @integration
+@pytest.mark.integration
 class TestCollectionBasics:
     """Verify we can create and use a real Anki collection."""
 
@@ -70,6 +72,7 @@ class TestCollectionBasics:
 
 
 @integration
+@pytest.mark.integration
 class TestEngineAgainstCollection:
     """Exercise the engine layer against a real Anki collection."""
 
@@ -220,6 +223,7 @@ if (el) { el.innerHTML = 'test'; }
 
 
 @integration
+@pytest.mark.integration
 class TestUiAgainstEngine:
     """Exercise UI components against real data (needs aqt/Qt)."""
 
@@ -292,6 +296,7 @@ class TestUiAgainstEngine:
 
 
 @integration
+@pytest.mark.integration
 class TestAddonActions:
     """Verify high-level actions in addon.py (glue logic)."""
 

@@ -50,7 +50,9 @@ class ConflictResolutionDialog(QDialog):
             self._table.setHorizontalHeaderLabels(
                 ["NID", "Conflict Type", "Action"]
             )
-            self._table.horizontalHeader().setStretchLastSection(True)
+            header = self._table.horizontalHeader()
+            assert header is not None
+            header.setStretchLastSection(True)
             self._table.setSelectionBehavior(
                 QTableWidget.SelectionBehavior.SelectRows
             )
@@ -142,7 +144,10 @@ class ConflictResolutionDialog(QDialog):
         """)
 
     def _on_selection_changed(self):
-        rows = self._table.selectionModel().selectedRows()
+        sel_model = self._table.selectionModel()
+        if sel_model is None:
+            return
+        rows = sel_model.selectedRows()
         if not rows:
             self._comparison.setHtml("")
             return
@@ -218,19 +223,21 @@ class ConflictResolutionDialog(QDialog):
         menu = QMenu(self)
         anki_action = menu.addAction("Keep Anki Version")
         git_action = menu.addAction("Keep Git Version")
-        chosen = menu.exec(
-            self._table.cellWidget(row, 2).mapToGlobal(
-                self._table.cellWidget(row, 2).rect().center()
+        chosen =         widget = self._table.cellWidget(row, 2)
+        assert isinstance(widget, QPushButton)
+        menu.exec(
+            widget.mapToGlobal(
+                widget.rect().center()
             )
         )
         if chosen == anki_action:
             c.resolution = "anki"
             c.resolved = True
-            self._table.cellWidget(row, 2).setText("Anki")
+            widget.setText("Anki")
         elif chosen == git_action:
             c.resolution = "git"
             c.resolved = True
-            self._table.cellWidget(row, 2).setText("Git")
+            widget.setText("Git")
 
     def _resolve_all(self, choice: str):
         for c in self.report.conflicts:
@@ -239,5 +246,5 @@ class ConflictResolutionDialog(QDialog):
                 c.resolved = True
         for row in range(self._table.rowCount()):
             btn = self._table.cellWidget(row, 2)
-            if btn:
+            if isinstance(btn, QPushButton):
                 btn.setText("Anki" if choice == "anki" else "Git")

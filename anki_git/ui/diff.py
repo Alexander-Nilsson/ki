@@ -376,7 +376,9 @@ class DiffDialog(QDialog):
             .highlight-del {{ background-color: rgba(162, 45, 45, 0.45); }}
             .field-label {{ background-color: {active_bg}; color: {muted_color}; font-size: 10px; font-weight: bold; padding: 4px 10px; margin-top: 10px; text-transform: uppercase; }}
         """
-        self.diff_browser.document().setDefaultStyleSheet(diff_qss)
+        doc = self.diff_browser.document()
+        if doc is not None:
+            doc.setDefaultStyleSheet(diff_qss)
 
     def _populate_tree(self):
         notes = [d for d in self.diff_data if d["type"] == "note"]

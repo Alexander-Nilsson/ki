@@ -679,7 +679,7 @@ def on_profile_close() -> None:
                             progress_callback=lambda text: (
                                 mw.progress.update(label=text),
                                 mw.app.processEvents()
-                            )
+                            ) and None
                         )
                     finally:
                         mw.progress.finish()

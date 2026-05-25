@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Set
 
 from anki.collection import Collection
+from anki.notes import NoteId
 
 from anki_git.config import SyncMode
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
@@ -90,7 +91,7 @@ def _export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[
     Returns the file path on success, None on failure.
     """
     try:
-        note_obj = col.get_note(nid)
+        note_obj = col.get_note(NoteId(nid))
     except Exception:
         return None
 
@@ -269,8 +270,11 @@ def sync_collection(
         new_anki_checksums.pop(str(nid), None)
     for nid in notes_to_import_nids:
         try:
-            note_obj = col.get_note(nid)
-            nt_name = note_obj.note_type()["name"]
+            note_obj = col.get_note(NoteId(nid))
+            nt_dict = note_obj.note_type()
+            if nt_dict is None:
+                continue
+            nt_name = nt_dict["name"]
             cards = note_obj.cards()
             deck_name = col.decks.name(cards[0].did) if cards else "Default"
             note = Note(

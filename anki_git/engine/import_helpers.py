@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from anki.collection import Collection
+from anki.decks import DeckId
+from anki.notes import NoteId
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
@@ -31,7 +33,8 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
     checksums = {}
     db = col.db
     assert db is not None
-    for nid in db.list("SELECT id FROM notes WHERE id > 0"):
+    for row in db.list("SELECT id FROM notes WHERE id > 0"):
+        nid = NoteId(row)
         try:
             note_obj = col.get_note(nid)
         except Exception:
@@ -101,7 +104,7 @@ def import_single_note(col: Collection, repo_path: Path, nid: int,
         return False
 
     try:
-        existing = col.get_note(nid)
+        existing = col.get_note(NoteId(nid))
     except Exception:
         existing = None
 
@@ -118,14 +121,19 @@ def import_single_note(col: Collection, repo_path: Path, nid: int,
             _logger.warning("Notetype '%s' not found for nid %d",
                             note_data.notetype, nid)
             return False
-        new_note = col.new_note(model_id)
+        new_note = col.new_note(model_id)  # pyright: ignore[reportArgumentType]
         for key, value in note_data.fields.items():
             if key in new_note:
                 new_note[key] = value
         new_note.tags = note_data.tags
         try:
             deck_id = col.decks.id(note_data.deck)
-            col.add_note(new_note, deck_id)
+            if deck_id is not None:
+                col.add_note(new_note, deck_id)
+            else:
+                _logger.warning("Deck '%s' not found for nid %d",
+                                note_data.deck, nid)
+                return False
             return True
         except Exception as e:
             _logger.warning("Failed to create note %d: %s", nid, e)
@@ -135,8 +143,8 @@ def import_single_note(col: Collection, repo_path: Path, nid: int,
 def delete_note_from_anki(col: Collection, nid: int) -> bool:
     """Remove a note from Anki by nid. Returns True on success."""
     try:
-        col.get_note(nid)
-        col.remove_notes([nid])
+        col.get_note(NoteId(nid))
+        col.remove_notes([NoteId(nid)])
         return True
     except Exception:
         _logger.warning("Failed to delete note %d from Anki", nid)
@@ -252,7 +260,7 @@ def import_notes(col: Collection, repo_path: Path, result,
                 continue
 
             try:
-                existing = col.get_note(note_data.nid)
+                existing = col.get_note(NoteId(note_data.nid))
             except Exception:
                 existing = None
 
@@ -275,15 +283,20 @@ def import_notes(col: Collection, repo_path: Path, result,
                         f"for nid {note_data.nid}"
                     )
                     continue
-                new_note = col.new_note(model_id)
+                new_note = col.new_note(model_id)  # pyright: ignore[reportArgumentType]
                 for key, value in note_data.fields.items():
                     if key in new_note:
                         new_note[key] = value
                 new_note.tags = note_data.tags
                 try:
                     deck_id = col.decks.id(note_data.deck)
-                    col.add_note(new_note, deck_id)
-                    result.notes_created += 1
+                    if deck_id is not None:
+                        col.add_note(new_note, deck_id)
+                        result.notes_created += 1
+                    else:
+                        result.errors.append(
+                            f"Deck '{note_data.deck}' not found"
+                        )
                 except Exception as e:
                     result.errors.append(
                         f"Failed to create note: {e}"

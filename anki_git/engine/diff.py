@@ -3,7 +3,7 @@
 import difflib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from anki_git.formats.notes_md import Note, parse_notes_file
 from anki_git.formats.notetype_yaml import Notetype
@@ -101,8 +101,9 @@ def _unified_diff(old: str, new: str, name: str) -> List[str]:
     )
 
 
-def compute_note_diff(old_note: Optional[Note], new_note: Note) -> NoteDiff:
+def compute_note_diff(old_note: Optional[Note], new_note: Optional[Note]) -> NoteDiff:
     if old_note is None:
+        assert new_note is not None
         return NoteDiff(
             nid=new_note.nid,
             deck=new_note.deck,
@@ -121,6 +122,7 @@ def compute_note_diff(old_note: Optional[Note], new_note: Note) -> NoteDiff:
         )
 
     if new_note is None:
+        assert old_note is not None
         return NoteDiff(
             nid=old_note.nid,
             deck=old_note.deck,
@@ -198,11 +200,13 @@ def _diff_field_lists(old_fields, new_fields) -> List[ComponentChange]:
         of = old_by_name.get(name)
         nf = new_by_name.get(name)
         if of is None:
+            assert nf is not None
             changes.append(ComponentChange(
                 component_type="field", name=name, status="added",
                 new_value=f"ord={nf.ord}"
             ))
         elif nf is None:
+            assert of is not None
             changes.append(ComponentChange(
                 component_type="field", name=name, status="removed",
                 old_value=f"ord={of.ord}"
@@ -240,9 +244,10 @@ def _diff_template_lists(old_tmpls, new_tmpls) -> List[ComponentChange]:
 
 
 def compute_notetype_diff(
-    old_nt: Optional[Notetype], new_nt: Notetype
+    old_nt: Optional[Notetype], new_nt: Optional[Notetype]
 ) -> Optional[NotetypeDiff]:
     if old_nt is None:
+        assert new_nt is not None
         return NotetypeDiff(
             name=new_nt.name, change_type="added",
             component_changes=[ComponentChange(
@@ -253,6 +258,7 @@ def compute_notetype_diff(
         )
 
     if new_nt is None:
+        assert old_nt is not None
         return NotetypeDiff(
             name=old_nt.name, change_type="deleted",
             component_changes=[ComponentChange(
@@ -313,7 +319,7 @@ def compute_notetype_diff(
     )
 
 
-def compute_export_diff(col, repo_path: Path, progress_callback: callable = None) -> DiffReport:
+def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callable] = None) -> DiffReport:
     """Compare current Anki collection vs repo state for export preview."""
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
@@ -383,7 +389,7 @@ def compute_export_diff(col, repo_path: Path, progress_callback: callable = None
     return report
 
 
-def compute_import_diff(col, repo_path: Path, progress_callback: callable = None) -> DiffReport:
+def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callable] = None) -> DiffReport:
     """Compare repo state vs current Anki collection for import preview."""
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 

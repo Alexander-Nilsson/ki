@@ -132,10 +132,9 @@ def get_commit_log(repo: Repo, max_count: int = 50) -> list[dict]:
             if i >= max_count:
                 break
             try:
-                files = sorted(set(
-                    d.b_path if d.b_path else d.a_path
-                    for d in c.parents[0].diff(c) if d.b_path or d.a_path
-                )) if c.parents else []
+                files = sorted(
+                    {p for d in c.parents[0].diff(c) if (p := d.b_path or d.a_path)}
+                ) if c.parents else []
             except Exception:
                 files = []
             commits.append({

@@ -73,7 +73,7 @@ class Notetype:
         css: str,
         sort_field: int = 0,
         type: int = 0,
-        deck_presets: dict = None,
+        deck_presets: Optional[dict] = None,
     ):
         self.name = name
         self.id = id

@@ -137,9 +137,12 @@ class HistoryDialog(QDialog):
         if row < 0 or row >= len(self.commits):
             return
         c = self.commits[row]
-        diff_text = get_commit_diff(
-            Path(self.repo_path), c["hexsha"]
-        )
+        from anki_git.engine.git_ops import open_repo
+        repo = open_repo(self.repo_path)
+        if repo is None:
+            self.diff_view.setPlainText("Could not open repository")
+            return
+        diff_text = get_commit_diff(repo, c["hexsha"])
         if not diff_text:
             self.diff_view.setPlainText("(no diff content)")
             return

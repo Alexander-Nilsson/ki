@@ -13,7 +13,7 @@ Matching strategy:
 
 import logging
 from pathlib import Path
-from typing import List, Set
+from typing import List, Optional, Set
 from dataclasses import dataclass, field
 
 from anki_git.engine import import_helpers
@@ -141,7 +141,7 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult
 
 
 def import_from_repo(col, repo_path: Path,
-                     nid_filter: Set[int] = None) -> ImportResult:
+                     nid_filter: Optional[Set[int]] = None) -> ImportResult:
     """Apply repo state to an Anki collection.
 
     Must be called on Anki's main thread.

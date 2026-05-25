@@ -52,22 +52,14 @@ jobs:
           uv sync --frozen --no-dev --no-cache
           .venv/bin/pip install \
             "pytest>=8.4.1" "pytest-cov>=6.1.1" \
+            "ruff>=0.11.0" \
             pyright
 
       - name: Install anki/aqt for integration tests
         run: |
-          .venv/bin/python -c "
-          import io, os, urllib.request, zipfile
-          site_pkgs = [p for p in __import__('sys').path if 'site-packages' in p][0]
-          for name, url in [
-              ('anki', 'https://files.pythonhosted.org/packages/2b/bc/36972ebb0c09effa41a1dc5f1e9c19b9fd85675cc3196f43559eeb3d0ceb/anki-25.9.4-cp39-abi3-manylinux_2_36_x86_64.whl'),
-              ('aqt',  'https://files.pythonhosted.org/packages/83/a1/a8e8c5bc7dda44c0decfdeb128ca308d65d7beca1a4131230e9abadef439/aqt-25.9.4-py3-none-any.whl'),
-          ]:
-              resp = urllib.request.urlopen(url)
-              zf = zipfile.ZipFile(io.BytesIO(resp.read()))
-              zf.extractall(site_pkgs)
-              print(f'Extracted {name}')
-          "
+          .venv/bin/pip install \
+            https://files.pythonhosted.org/packages/2b/bc/36972ebb0c09effa41a1dc5f1e9c19b9fd85675cc3196f43559eeb3d0ceb/anki-25.9.4-cp39-abi3-manylinux_2_36_x86_64.whl \
+            https://files.pythonhosted.org/packages/83/a1/a8e8c5bc7dda44c0decfdeb128ca308d65d7beca1a4131230e9abadef439/aqt-25.9.4-py3-none-any.whl
 
       - name: Lint
         run: |
