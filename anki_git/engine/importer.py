@@ -79,12 +79,13 @@ def preview_import(repo_path: Path, col=None) -> ImportResult:
     )
 
 
-def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult:
+def pull_from_repo(col, repo_path: Path, conflict_callback=None,
+                   sync_mode: str = "accept_all") -> ImportResult:
     """Import repo state into Anki with conflict detection and optional resolution.
 
     Steps:
     1. Compute checksums for current Anki notes, Git notes, and base (meta.json)
-    2. Run conflict detection
+    2. Run conflict detection + auto-resolution
     3. If conflicts exist, invoke conflict_callback(report) for user resolution
     4. Apply only git-winning changes to Anki
     5. Delete from Anki notes that were deleted in repo (if resolution says so)
@@ -93,16 +94,18 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult
 
     conflict_callback receives a ConflictReport and must return a resolved ConflictReport.
     """
-    from anki_git.engine.conflict import detect_conflicts, enrich_conflicts_with_content, ConflictType
+    from anki_git.engine.conflict import process_conflicts, ConflictType
     from anki_git.engine.checksums import load_meta, save_meta
 
     anki_checksums = import_helpers.compute_anki_checksums(col)
-    git_checksums, _ = import_helpers.compute_git_checksums(repo_path)
+    git_checksums, git_notes_lookup = import_helpers.compute_git_checksums(repo_path)
     meta = load_meta(repo_path)
     base_checksums = meta.get("note_checksums", {})
 
-    report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
-    enrich_conflicts_with_content(report, col, repo_path)
+    report = process_conflicts(
+        base_checksums, anki_checksums, git_checksums,
+        sync_mode, col, repo_path, notes_lookup=git_notes_lookup,
+    )
 
     if conflict_callback and report.has_conflicts:
         report = conflict_callback(report)

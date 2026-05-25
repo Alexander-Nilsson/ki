@@ -20,9 +20,7 @@ from anki.notes import NoteId
 from anki_git.config import SyncMode
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
 from anki_git.engine.conflict import (
-    detect_conflicts,
-    resolve_conflicts,
-    enrich_conflicts_with_content,
+    process_conflicts,
     merge_notetypes,
     ConflictType,
 )
@@ -34,14 +32,14 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     get_commit_count,
 )
-from anki_git.engine import import_helpers
+from anki_git.engine import export_helpers, import_helpers
 from anki_git.formats.notetype_yaml import (
     Notetype,
     read_all_notetypes,
     write_notetype,
     notetype_paths,
 )
-from anki_git.formats.notes_md import Note, write_note_file
+from anki_git.formats.notes_md import Note
 
 _logger = logging.getLogger("anki_git")
 
@@ -85,38 +83,6 @@ class SyncResult:
     commit_count: int = 0
 
 
-def _export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[Path]:
-    """Export a single note from Anki into repo files.
-
-    Returns the file path on success, None on failure.
-    """
-    try:
-        note_obj = col.get_note(NoteId(nid))
-    except Exception:
-        return None
-
-    nt_dict = note_obj.note_type()
-    if nt_dict is None:
-        return None
-    nt_name = nt_dict["name"]
-    try:
-        cards = note_obj.cards()
-        if not cards:
-            return None
-        deck_name = col.decks.name(cards[0].did)
-    except Exception:
-        return None
-
-    fields = dict(note_obj.items())
-    note = Note(
-        nid=nid, notetype=nt_name, tags=list(note_obj.tags),
-        deck=deck_name, fields=fields,
-    )
-    deck_path_parts = deck_name.split("::")
-    note_dir = repo_path / DECKS_DIR / Path(*deck_path_parts)
-    serialized = note.serialize()
-    return write_note_file(note_dir, note, content=serialized)
-
 
 def sync_collection(
     col: Collection,
@@ -151,10 +117,10 @@ def sync_collection(
 
     if progress_callback:
         progress_callback("Detecting conflicts...")
-    report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
-
-    resolve_conflicts(report, sync_mode)
-    enrich_conflicts_with_content(report, col, repo_path, notes_lookup=git_notes_lookup)
+    report = process_conflicts(
+        base_checksums, anki_checksums, git_checksums,
+        sync_mode, col, repo_path, notes_lookup=git_notes_lookup,
+    )
 
     if report.has_conflicts and conflict_callback and sync_mode == SyncMode.ALWAYS_ASK:
         unresolved = [c for c in report.conflicts if not c.resolved]
@@ -252,8 +218,9 @@ def sync_collection(
         progress_callback("Exporting changes to repo...")
 
     for nid in notes_to_export:
-        file_path = _export_single_note(col, repo_path, nid)
-        if file_path:
+        exported = export_helpers.export_single_note(col, repo_path, nid)
+        if exported:
+            file_path = exported[0]
             result.notes_exported += 1
             changed_files.add(str(file_path.relative_to(repo_path)))
 
@@ -328,12 +295,21 @@ def sync_collection(
     notes_changed = result.notes_exported + result.notes_imported
     notetypes_changed = result.notetypes_exported + result.notetypes_imported
 
+    # Always store tracking data for quick_has_changes()
+    meta["last_note_count"] = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
+    meta["last_max_mod"] = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+    try:
+        meta["last_commit_sha"] = str(repo.head.commit)
+    except (ValueError, Exception):
+        meta["last_commit_sha"] = ""
+
     if notes_changed > 0 or notetypes_changed > 0:
         if progress_callback:
             progress_callback("Committing changes...")
         meta["last_export_time"] = int(time.time())
         meta["note_checksums"] = new_anki_checksums
         meta["collection_path"] = str(col.path)
+
         save_meta(repo_path, meta)
 
         changed_files.add(
@@ -347,13 +323,8 @@ def sync_collection(
             if progress_callback:
                 progress_callback("Pushing to remote...")
             push_to_remote(repo, remote_url)
-
-    # Store tracking data for quick_has_changes() — always, even if no
-    # changes occurred, so the baseline stays current after remote pulls etc.
-    meta["last_note_count"] = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
-    meta["last_max_mod"] = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
-    meta["last_commit_sha"] = str(repo.head.commit)
-    save_meta(repo_path, meta)
+    else:
+        save_meta(repo_path, meta)
 
     result.commit_count = get_commit_count(repo)
     result.duration_seconds = time.perf_counter() - _start

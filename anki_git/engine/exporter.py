@@ -15,14 +15,14 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     get_commit_count,
 )
-from anki_git.engine import import_helpers
+from anki_git.engine import export_helpers, import_helpers
 from anki_git.formats.notetype_yaml import (
     Notetype,
     write_notetype,
     read_all_notetypes,
     notetype_paths,
 )
-from anki_git.formats.notes_md import Note, write_note_file
+from anki_git.formats.notes_md import Note
 from anki_git.formats.media import handle_media, get_media_filenames_from_fields, MediaStrategy
 
 _logger = logging.getLogger("anki_git")
@@ -74,7 +74,6 @@ def export_collection(
     meta = load_meta(repo_path)
 
     notetypes_dir = repo_path / NOTETYPES_DIR
-    decks_dir = repo_path / DECKS_DIR
 
     if progress_callback:
         progress_callback("Exporting notetypes...")
@@ -107,63 +106,30 @@ def export_collection(
     note_checksums: Dict[str, str] = {}
     notes_changed = 0
     media_filenames: set = set()
-    _nt_name_cache: Dict[int, str] = {}
 
     for i, nid in enumerate(nids):
         if progress_callback and i % 20 == 0:
             progress_callback(f"Processing notes... {i}/{total}")
-        try:
-            note_obj = col.get_note(nid)
-        except Exception as e:
-            _logger.warning("Failed to get note %d: %s", nid, e)
+        exported = export_helpers.export_single_note(col, repo_path, nid)
+        if exported is None:
             continue
-        mid = note_obj.mid
-        if mid not in _nt_name_cache:
-            nt_dict = note_obj.note_type()
-            if nt_dict is None:
-                _logger.warning("Note %d has no notetype, skipping", nid)
-                continue
-            _nt_name_cache[mid] = nt_dict["name"]
-        nt_name = _nt_name_cache[mid]
-        try:
-            cards = note_obj.cards()
-            if not cards:
-                _logger.debug("Note %d has no cards, skipping", nid)
-                continue
-            deck_name = col.decks.name(cards[0].did)
-        except Exception as e:
-            _logger.warning("Failed to get deck for note %d: %s", nid, e)
-            continue
+        file_path, serialized, note = exported
 
-        fields = dict(note_obj.items())
-        tags = list(note_obj.tags)
-
-        note = Note(
-            nid=nid,
-            notetype=nt_name,
-            tags=tags,
-            deck=deck_name,
-            fields=fields,
-        )
-
-        serialized = note.serialize()
         checksum = content_hash(serialized)
         note_checksums[str(nid)] = checksum
 
         old_checksum = meta_checksums.get(str(nid))
         if old_checksum != checksum:
             notes_changed += 1
-            deck_path_parts = deck_name.split("::")
-            note_dir = decks_dir.joinpath(*deck_path_parts)
-            note_path = write_note_file(note_dir, note, content=serialized)
-            changed_files.add(str(note_path.relative_to(repo_path)))
+            changed_files.add(str(file_path.relative_to(repo_path)))
 
+        deck_name = note.deck
         if deck_name not in notes_by_deck:
             notes_by_deck[deck_name] = []
         notes_by_deck[deck_name].append(note)
 
         if media_strategy != "none":
-            for field_value in fields.values():
+            for field_value in note.fields.values():
                 media_filenames.update(get_media_filenames_from_fields(field_value))
 
     # Clean up stale repo files for deleted Anki notes

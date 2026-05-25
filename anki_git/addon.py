@@ -1,11 +1,11 @@
 import datetime
 import logging
 from pathlib import Path
-from typing import Any
 
 from anki_git.config import KiSyncConfig, SyncMode
 from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
+from anki_git.ui.utils import run_on_main_sync
 
 
 _config = None
@@ -118,23 +118,13 @@ def sync_action() -> None:
     def do_sync(col):
         _logger.info("Starting two-way sync...")
 
-        import threading
-        event = threading.Event()
-        resolved_report = [None]
-
         def conflict_handler(report):
             from anki_git.ui import ConflictResolutionDialog
-
-            def on_main():
+            def _show():
                 diag = ConflictResolutionDialog(report, mw)
-                if diag.exec():
-                    resolved_report[0] = diag.resolved_report  # type: ignore[arg-type]
-                else:
-                    resolved_report[0] = report  # type: ignore[arg-type]
-                event.set()
-            mw.taskman.run_on_main(on_main)
-            event.wait()
-            return resolved_report[0]
+                diag.exec()
+                return diag.resolved_report
+            return run_on_main_sync(mw, _show)
 
         sync_mode = config.sync_mode
         conflict_cb = (
@@ -142,11 +132,8 @@ def sync_action() -> None:
         )
 
         def preview_handler(preview):
-            event_preview = threading.Event()
-            result_preview = [False]
-
-            def on_main():
-                from aqt.qt import QMessageBox
+            from aqt.qt import QMessageBox
+            def _ask():
                 parts = []
                 if preview.notes_to_export:
                     parts.append(f"Notes to push to repo: {preview.notes_to_export}")
@@ -160,17 +147,13 @@ def sync_action() -> None:
                     parts.append(f"Notetypes to sync: {preview.notetypes_to_sync}")
                 if preview.conflicts_unresolved:
                     parts.append(f"Unresolved conflicts (will be skipped): {preview.conflicts_unresolved}")
-
                 msg = "\n".join(parts) + "\n\nProceed with sync?"
-                result_preview[0] = QMessageBox.question(
+                return QMessageBox.question(
                     mw, "AnkiGit Sync Preview",
                     msg,
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 ) == QMessageBox.StandardButton.Yes
-                event_preview.set()
-            mw.taskman.run_on_main(on_main)
-            event_preview.wait()
-            return result_preview[0]
+            return run_on_main_sync(mw, _ask)
 
         preview_cb = preview_handler if not config.background_mode else None
 
@@ -431,23 +414,16 @@ def import_action() -> None:
             backup_path.parent.mkdir(parents=True, exist_ok=True)
             backup_path.write_bytes(col_path.read_bytes())
 
-            import threading
-
             def handle_conflicts_bg(report):
-                event = threading.Event()
-                resolved = [report]
-
-                def on_main():
+                def _show():
                     diag = ConflictResolutionDialog(report, mw)
-                    if diag.exec():
-                        resolved[0] = diag.resolved_report
-                    event.set()
-                mw.taskman.run_on_main(on_main)
-                event.wait()
-                return resolved[0]
+                    diag.exec()
+                    return diag.resolved_report
+                return run_on_main_sync(mw, _show)
 
             return pull_from_repo(
                 col, repo_path,
+                sync_mode=config.sync_mode,
                 conflict_callback=handle_conflicts_bg,
             )
 
@@ -637,23 +613,13 @@ def _run_startup_sync(config: KiSyncConfig) -> None:
     repo_path = Path(config.repo_path)
 
     def do_sync(col):
-        import threading
-        event = threading.Event()
-        resolved_report: list[Any] = [None]
-
         def conflict_handler(report):
             from anki_git.ui import ConflictResolutionDialog
-
-            def on_main():
+            def _show():
                 diag = ConflictResolutionDialog(report, mw)
-                if diag.exec():
-                    resolved_report[0] = diag.resolved_report
-                else:
-                    resolved_report[0] = report
-                event.set()
-            mw.taskman.run_on_main(on_main)
-            event.wait()
-            return resolved_report[0]
+                diag.exec()
+                return diag.resolved_report
+            return run_on_main_sync(mw, _show)
 
         sync_mode = config.sync_mode
         conflict_cb = (

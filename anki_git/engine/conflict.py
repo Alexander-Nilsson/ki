@@ -273,6 +273,25 @@ def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
             c.git_content = "{}"
 
 
+def process_conflicts(
+    base_checksums: Dict[str, str],
+    anki_checksums: Dict[str, str],
+    git_checksums: Dict[str, str],
+    sync_mode: str,
+    col,
+    repo_path: Path,
+    notes_lookup: Optional[Dict[int, "Note"]] = None,
+) -> ConflictReport:
+    """Combined three-step conflict pipeline: detect → resolve → enrich.
+
+    Convenience wrapper that always calls all three steps sequentially.
+    """
+    report = detect_conflicts(base_checksums, anki_checksums, git_checksums)
+    resolve_conflicts(report, sync_mode)
+    enrich_conflicts_with_content(report, col, repo_path, notes_lookup=notes_lookup)
+    return report
+
+
 def detect_conflicts(
     base_checksums: Dict[str, str],
     anki_checksums: Dict[str, str],
