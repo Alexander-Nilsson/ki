@@ -204,14 +204,7 @@ def export_collection(
         )
 
         stage_files(repo, list(changed_files))
-        create_snapshot_commit(
-            repo,
-            notes_changed=notes_changed + cleaned,
-            notetypes_changed=result.notetypes_changed,
-            changed_decks=result.changed_decks,
-            changed_notetypes=changed_notetypes,
-            collection_path=str(col.path),
-        )
+        create_snapshot_commit(repo, list(changed_files))
 
         if remote_url:
             if progress_callback:

@@ -62,28 +62,17 @@ def commit(repo: Repo, message: str) -> None:
 
 def create_snapshot_commit(
     repo: Repo,
-    notes_changed: int,
-    notetypes_changed: int,
-    changed_decks: dict,
-    changed_notetypes: list,
-    collection_path: str,
+    changed_files: list[str],
 ) -> None:
-    deck_lines = ", ".join(
-        f"{d} ({n} notes)" for d, n in changed_decks.items()
-    )
-    nt_lines = ", ".join(changed_notetypes)
-    timestamp = datetime.datetime.now(timezone.utc).strftime(
-        "%Y-%m-%dT%H:%M:%SZ"
-    )
-    message = (
-        f"snapshot: {notes_changed} notes changed, "
-        f"{notetypes_changed} notetypes updated\n"
-        f"\n"
-        f"Changed decks: {deck_lines}\n"
-        f"Changed notetypes: {nt_lines}\n"
-        f"Collection: {collection_path}\n"
-        f"Timestamp: {timestamp}\n"
-    )
+    if not changed_files:
+        return
+    sorted_files = sorted(changed_files)
+    if len(sorted_files) <= 5:
+        subject = ", ".join(sorted_files)
+    else:
+        subject = f"{len(sorted_files)} files changed"
+    body = "\n".join(f"- {f}" for f in sorted_files)
+    message = f"{subject}\n\n{body}" if len(sorted_files) > 5 else subject
     repo.index.commit(message)
 
 

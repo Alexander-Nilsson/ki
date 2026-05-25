@@ -96,19 +96,20 @@ def test_create_snapshot_commit(tmp_path):
     f = tmp_path / "notes.md"
     f.write_text("content", encoding="utf-8")
     stage_all(repo)
-    create_snapshot_commit(
-        repo,
-        notes_changed=10,
-        notetypes_changed=2,
-        changed_decks={"Default": 10},
-        changed_notetypes=["Basic", "Cloze"],
-        collection_path="/test/collection.anki2",
-    )
+    create_snapshot_commit(repo, ["decks/Default/123.md", "notetypes/Basic.yaml"])
     assert get_commit_count(repo) == 1
     msg = repo.head.commit.message
-    assert "snapshot:" in msg
-    assert "10 notes changed" in msg
-    assert "2 notetypes updated" in msg
-    assert "Default" in msg
-    assert "Basic" in msg
-    assert "Cloze" in msg
+    assert "decks/Default/123.md" in msg
+    assert "notetypes/Basic.yaml" in msg
+
+
+def test_create_snapshot_commit_many_files(tmp_path):
+    repo = init_repo(tmp_path)
+    f = tmp_path / "notes.md"
+    f.write_text("content", encoding="utf-8")
+    stage_all(repo)
+    files = [f"decks/D/n{i}.md" for i in range(10)]
+    create_snapshot_commit(repo, files)
+    assert get_commit_count(repo) == 1
+    msg = repo.head.commit.message
+    assert "10 files changed" in msg
