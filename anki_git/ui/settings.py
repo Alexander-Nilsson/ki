@@ -7,6 +7,7 @@ from git import GitCommandError
 
 from anki_git.config import KiSyncConfig, SYNC_MODE_CHOICES
 from anki_git.engine.git_ops import open_repo, get_existing_remote_url
+from anki_git.engine.checksums import load_meta
 
 
 class SettingsDialog(QDialog):
@@ -17,6 +18,7 @@ class SettingsDialog(QDialog):
         self.setMinimumWidth(550)
         self._setup_ui()
         self._load_config()
+        self._load_status()
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -76,6 +78,13 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(sync_group)
 
+        status_group = QGroupBox("Status", self)
+        status_layout = QFormLayout(status_group)
+        self._status_value = QLabel("", self)
+        self._status_value.setStyleSheet("font-weight: bold;")
+        status_layout.addRow("Last sync:", self._status_value)
+        layout.addWidget(status_group)
+
         media_group = QGroupBox("Media", self)
         media_layout = QFormLayout(media_group)
         self._media_strategy_combo = QComboBox(self)
@@ -104,6 +113,34 @@ class SettingsDialog(QDialog):
         idx = self._sync_mode_combo.findData(self.config.sync_mode)
         if idx >= 0:
             self._sync_mode_combo.setCurrentIndex(idx)
+
+    def _load_status(self):
+        """Read sync status from the global status string and meta.json."""
+        from anki_git.addon import _get_last_sync_status
+        import datetime
+        from pathlib import Path
+
+        repo_path_str = self._repo_path_input.text().strip()
+        status_text = _get_last_sync_status()
+        if status_text:
+            self._status_value.setText(status_text)
+            return
+        if not repo_path_str:
+            self._status_value.setText("No repo configured")
+            return
+        meta = load_meta(Path(repo_path_str))
+        ts = meta.get("last_export_time")
+        if ts:
+            t = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
+            ago = datetime.datetime.now(datetime.timezone.utc) - t
+            if ago.total_seconds() < 60:
+                self._status_value.setText("Just now")
+            elif ago.total_seconds() < 3600:
+                self._status_value.setText(f"{int(ago.total_seconds() // 60)}m ago")
+            else:
+                self._status_value.setText(t.strftime("%Y-%m-%d %H:%M"))
+        else:
+            self._status_value.setText("Never synced")
 
     def _save_and_accept(self):
         self.config.repo_path = self._repo_path_input.text().strip()

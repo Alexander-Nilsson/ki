@@ -348,6 +348,13 @@ def sync_collection(
                 progress_callback("Pushing to remote...")
             push_to_remote(repo, remote_url)
 
+    # Store tracking data for quick_has_changes() — always, even if no
+    # changes occurred, so the baseline stays current after remote pulls etc.
+    meta["last_note_count"] = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
+    meta["last_max_mod"] = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+    meta["last_commit_sha"] = str(repo.head.commit)
+    save_meta(repo_path, meta)
+
     result.commit_count = get_commit_count(repo)
     result.duration_seconds = time.perf_counter() - _start
     _logger.info(

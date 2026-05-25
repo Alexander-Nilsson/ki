@@ -1,6 +1,7 @@
 import datetime
 import logging
 from pathlib import Path
+from typing import Any
 
 from anki_git.config import KiSyncConfig, SyncMode
 from anki_git.engine.exporter import export_collection
@@ -582,6 +583,12 @@ def show_menu() -> None:
 
 
 _menu_shown = False
+_last_sync_status: str = ""
+
+
+def _get_last_sync_status() -> str:
+    """Return a human-readable string about the last sync result."""
+    return _last_sync_status
 
 
 def _run_background_sync(config: KiSyncConfig) -> None:
@@ -614,6 +621,138 @@ def _run_background_sync(config: KiSyncConfig) -> None:
         op=do_sync,
         success=lambda _: None,
     ).run_in_background()
+
+
+def _run_startup_sync(config: KiSyncConfig) -> None:
+    """Run sync on startup in the background — no modal progress dialog.
+
+    Shows a conflict dialog if there are true conflicts (non-blocking UX),
+    and displays a small non-blocking notification with change counts when
+    done.  Updates the global sync status for the settings dialog.
+    """
+    from aqt import mw
+    from aqt.operations import QueryOp
+    from anki_git.engine.sync import sync_collection
+
+    repo_path = Path(config.repo_path)
+
+    def do_sync(col):
+        import threading
+        event = threading.Event()
+        resolved_report: list[Any] = [None]
+
+        def conflict_handler(report):
+            from anki_git.ui import ConflictResolutionDialog
+
+            def on_main():
+                diag = ConflictResolutionDialog(report, mw)
+                if diag.exec():
+                    resolved_report[0] = diag.resolved_report
+                else:
+                    resolved_report[0] = report
+                event.set()
+            mw.taskman.run_on_main(on_main)
+            event.wait()
+            return resolved_report[0]
+
+        sync_mode = config.sync_mode
+        conflict_cb = (
+            conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
+        )
+
+        result = sync_collection(
+            col, repo_path,
+            sync_mode=sync_mode,
+            conflict_callback=conflict_cb,
+            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
+            media_strategy=config.media_strategy,
+        )
+        if result.error:
+            _logger.error("Startup sync failed: %s", result.error)
+        else:
+            _logger.info(
+                "Startup sync: %d notes exported, %d notes imported",
+                result.notes_exported, result.notes_imported,
+            )
+        return result
+
+    def on_sync_done(result):
+        global _last_sync_status
+        if result.error:
+            _last_sync_status = f"Error: {result.error}"
+            return
+        _last_sync_status = _format_sync_status(result)
+        if result.notes_exported > 0 or result.notes_imported > 0:
+            _show_sync_notification(result)
+
+    QueryOp(
+        parent=mw,
+        op=do_sync,
+        success=on_sync_done,
+    ).run_in_background()
+
+
+def _format_sync_status(result) -> str:
+    """Build a short human-readable sync status string."""
+    parts = []
+    if result.notes_exported:
+        parts.append(f"{result.notes_exported} to repo")
+    if result.notes_imported:
+        parts.append(f"{result.notes_imported} to Anki")
+    if result.notes_deleted_from_git:
+        parts.append(f"{result.notes_deleted_from_git} deleted from repo")
+    if result.notes_deleted_from_anki:
+        parts.append(f"{result.notes_deleted_from_anki} deleted from Anki")
+    if result.notetypes_exported:
+        parts.append(f"{result.notetypes_exported} notetypes to repo")
+    if result.notetypes_imported:
+        parts.append(f"{result.notetypes_imported} notetypes to Anki")
+    if result.conflicts_unresolved:
+        parts.append(f"{result.conflicts_unresolved} conflicts left unresolved")
+    if not parts:
+        return "Up to date"
+    return ", ".join(parts) + f" ({result.duration_seconds:.1f}s)"
+
+
+def _show_sync_notification(result) -> None:
+    """Show a non-blocking notification with sync change counts."""
+    from aqt import mw
+    from aqt.qt import QMessageBox
+
+    if result.error:
+        return
+
+    parts = []
+    if result.notes_exported:
+        parts.append(f"Notes exported: {result.notes_exported}")
+    if result.notes_imported:
+        parts.append(f"Notes imported: {result.notes_imported}")
+    if result.notes_deleted_from_git:
+        parts.append(f"Notes deleted from repo: {result.notes_deleted_from_git}")
+    if result.notes_deleted_from_anki:
+        parts.append(f"Notes deleted from Anki: {result.notes_deleted_from_anki}")
+    if result.notetypes_exported:
+        parts.append(f"Notetypes exported: {result.notetypes_exported}")
+    if result.notetypes_imported:
+        parts.append(f"Notetypes imported: {result.notetypes_imported}")
+    if result.conflicts_unresolved:
+        parts.append(f"Conflicts unresolved: {result.conflicts_unresolved}")
+
+    if not parts:
+        return
+
+    def show():
+        msg = QMessageBox(mw)
+        msg.setIcon(QMessageBox.Icon.Information)
+        msg.setWindowTitle("AnkiGit Sync")
+        msg.setText("Startup sync complete")
+        msg.setInformativeText("\n".join(parts))
+        msg.setDetailedText(f"Duration: {result.duration_seconds:.1f}s")
+        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
+        msg.setModal(False)
+        msg.show()
+
+    mw.taskman.run_on_main(show)
 
 
 def _run_background_export(config: KiSyncConfig) -> None:
@@ -653,10 +792,17 @@ def on_profile_open() -> None:
         _menu_shown = True
     config = load_config()
     if config.auto_sync_on_startup and config.repo_path:
-        if config.background_mode:
-            _run_background_sync(config)
-        else:
-            sync_action()
+        from aqt import mw
+        if mw and mw.col:
+            from anki_git.engine.checksums import quick_has_changes
+            try:
+                result = quick_has_changes(mw.col, Path(config.repo_path))
+                if result is False:
+                    _logger.info("No changes detected, skipping startup sync")
+                    return
+            except Exception:
+                pass
+        _run_startup_sync(config)
 
 
 def on_profile_close() -> None:
