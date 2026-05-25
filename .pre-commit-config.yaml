@@ -9,8 +9,9 @@ repos:
       - id: check-added-large-files
       - id: detect-private-key
 
-  - repo: https://github.com/pycqa/flake8
-    rev: 7.1.2
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.11.5
     hooks:
-      - id: flake8
-        args: [--config=.flake8]
+      - id: ruff
+        args: [check]
+      - id: ruff-format

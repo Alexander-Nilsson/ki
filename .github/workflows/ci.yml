@@ -51,7 +51,6 @@ jobs:
           uv venv --seed
           uv sync --frozen --no-dev --no-cache
           .venv/bin/pip install \
-            flake8 \
             "pytest>=8.4.1" "pytest-cov>=6.1.1" \
             pyright
 
@@ -72,7 +71,7 @@ jobs:
 
       - name: Lint
         run: |
-          .venv/bin/flake8 anki_git/ tests/
+          .venv/bin/ruff check anki_git/ tests/
 
       - name: Type Check
         run: |

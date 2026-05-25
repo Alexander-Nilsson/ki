@@ -56,7 +56,7 @@ ln -s "$(pwd)/anki_git/anki_git" ~/.local/share/Anki2/addons21/anki_git
 ```bash
 uv sync                    # create venv + install deps
 uv run pytest ...          # run tests
-uv run flake8 ...          # lint
+uv run ruff check ...      # lint
 ```
 
 ### Building

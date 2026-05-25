@@ -14,9 +14,19 @@ dependencies = [
 dev = [
     "pytest>=8.4.1",
     "pytest-cov>=6.1.1",
-    "flake8>=7.3.0",
+    "ruff>=0.11.0",
     "pyright>=1.1.409",
+    "anki>=25.9.4",
+    "aqt>=25.9.4",
 ]
+
+[tool.ruff]
+line-length = 100
+exclude = [".venv", ".git", "__pycache__", "build", "vendor"]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

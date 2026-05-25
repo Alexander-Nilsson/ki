@@ -48,7 +48,7 @@ anki_git/
 ```bash
 uv run pytest tests/                         # all tests (needs anki/aqt installed)
 uv run pytest tests/ -m "not integration"    # engine-layer tests only
-uv run flake8 anki_git/ tests/               # lint
+uv run ruff check anki_git/ tests/           # lint
 uv run pyright anki_git/                     # type check (engine layer only)
 uv run python build.py all                   # clean → build → package .ankiaddon
 uv run python scripts/release.py 0.2.0       # bump version, tag, push
@@ -60,7 +60,7 @@ uv run python scripts/release.py 0.2.0       # bump version, tag, push
 - **Version in two places** — update both `pyproject.toml` AND `anki_git/__init__.py`.
 - **`engine/importer.py`** uses `rglob("*.md")` which matches both `<nid>.md` and legacy `notes.md` — `parse_notes_file()` handles both formats.
 - **Menu:** "Sync" (two-way), "Export to Repo (Snapshot)" (one-way), "Import from Repo (Pull)" (one-way), "Settings..."
-- **Flake8 + pyright** for static analysis. Config in `pyproject.toml` + `.flake8`.
+- **Ruff + pyright** for static analysis. Config in `pyproject.toml`.
 - **CI ignores legacy files** that don't exist anymore: `--ignore=tests/test_ki.py --ignore=tests/test_integration.py --ignore=tests/test_package.py --ignore=tests/test_parser.py`.
 - **License is AGPL-3.0-only**.
 - **Fixtures** in `tests/conftest.py` provide `anki_session` (headless Anki) and `mock_aqt_mw`.

@@ -57,10 +57,11 @@ def test_compute_git_checksums(tmp_path):
         '<!-- note: nid=123 notetype=Basic tags=tag1 deck=Default -->\n## Front\nHello\n',
         encoding="utf-8",
     )
-    checksums = compute_git_checksums(tmp_path)
+    checksums, notes = compute_git_checksums(tmp_path)
     assert "123" in checksums
     assert isinstance(checksums["123"], str)
     assert len(checksums["123"]) == 32
+    assert 123 in notes
 
 
 def test_import_result_defaults():
@@ -173,16 +174,19 @@ def test_compute_git_checksums_malformed_note(tmp_path):
         'garbage content no header\n',
         encoding="utf-8",
     )
-    checksums = compute_git_checksums(tmp_path)
+    checksums, notes = compute_git_checksums(tmp_path)
     assert "1" in checksums
     assert "2" not in checksums
+    assert 1 in notes
+    assert 2 not in notes
 
 
 def test_compute_git_checksums_empty_decks_dir(tmp_path):
     """Empty decks dir produces empty checksums."""
     (tmp_path / "decks").mkdir(parents=True)
-    checksums = compute_git_checksums(tmp_path)
+    checksums, notes = compute_git_checksums(tmp_path)
     assert checksums == {}
+    assert notes == {}
 
 
 @pytest.mark.integration

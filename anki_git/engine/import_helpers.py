@@ -8,7 +8,7 @@ remain testable without the Anki Qt runtime.
 import logging
 from collections.abc import Callable
 from pathlib import Path
-from typing import Dict, Optional, Set, TYPE_CHECKING
+from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from anki.collection import Collection
 
@@ -55,17 +55,18 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
     return checksums
 
 
-def compute_git_checksums(repo_path: Path) -> Dict[str, str]:
+def compute_git_checksums(repo_path: Path) -> Tuple[Dict[str, str], Dict[int, "Note"]]:
     from anki_git.engine.checksums import content_hash
     from anki_git.formats.notes_md import parse_notes_file
 
     checksums = {}
+    notes: Dict[int, "Note"] = {}
     decks_dir = repo_path / DECKS_DIR
     for notes_file in sorted(decks_dir.rglob("*.md")):
-        notes = parse_notes_file(notes_file)
-        for note_data in notes:
+        for note_data in parse_notes_file(notes_file):
+            notes[note_data.nid] = note_data
             checksums[str(note_data.nid)] = content_hash(note_data.serialize())
-    return checksums
+    return checksums, notes
 
 
 def load_all_repo_notes(repo_path: Path) -> Dict[int, "Note"]:
@@ -289,14 +290,17 @@ def import_notes(col: Collection, repo_path: Path, result,
                     )
 
 
-def cleanup_stale_repo_notes(col: Collection, repo_path: Path) -> int:
+def cleanup_stale_repo_notes(col: Collection, repo_path: Path,
+                              anki_nids: Optional[Set[int]] = None) -> int:
     """Remove repo note files for notes that no longer exist in Anki.
 
+    Optionally accepts a pre-computed set of Anki nids to avoid a DB query.
     Returns the number of files cleaned up.
     """
-    db = col.db
-    assert db is not None
-    anki_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
+    if anki_nids is None:
+        db = col.db
+        assert db is not None
+        anki_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
     decks_dir = repo_path / DECKS_DIR
     cleaned = 0
     for notes_file in sorted(decks_dir.rglob("*.md")):

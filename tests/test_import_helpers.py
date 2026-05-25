@@ -12,7 +12,9 @@ from anki_git.engine.import_helpers import (
 class TestComputeGitChecksums:
     def test_empty_decks_dir(self, tmp_path):
         (tmp_path / "decks").mkdir(parents=True)
-        assert compute_git_checksums(tmp_path) == {}
+        checksums, notes = compute_git_checksums(tmp_path)
+        assert checksums == {}
+        assert notes == {}
 
     def test_returns_checksums(self, tmp_path):
         decks_dir = tmp_path / "decks" / "Default"
@@ -23,9 +25,11 @@ class TestComputeGitChecksums:
             '## Front\nHello\n',
             encoding="utf-8",
         )
-        checksums = compute_git_checksums(tmp_path)
+        checksums, notes = compute_git_checksums(tmp_path)
         assert "123" in checksums
         assert len(checksums["123"]) == 32
+        assert 123 in notes
+        assert notes[123].deck == "Default"
 
     def test_skips_malformed_notes(self, tmp_path):
         decks_dir = tmp_path / "decks" / "Default"
@@ -39,9 +43,11 @@ class TestComputeGitChecksums:
             'garbage no header\n',
             encoding="utf-8",
         )
-        checksums = compute_git_checksums(tmp_path)
+        checksums, notes = compute_git_checksums(tmp_path)
         assert "1" in checksums
         assert "2" not in checksums
+        assert 1 in notes
+        assert 2 not in notes
 
 
 class TestLoadAllRepoNotes:

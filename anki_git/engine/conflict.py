@@ -21,10 +21,13 @@ Conflict cases:
 import json
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 from anki_git.config import SyncMode
+
+if TYPE_CHECKING:
+    from anki_git.formats.notes_md import Note
 
 
 class ConflictType(Enum):
@@ -230,16 +233,24 @@ def merge_notetypes(
     return merged, conflicts
 
 
-def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path) -> None:
+def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
+                                  notes_lookup: Optional[Dict[int, "Note"]] = None) -> None:
     """Populate anki_content/git_content on true CONFLICT notes.
 
     Fetches the actual field content from both sides so the UI can render
     a side-by-side comparison. Content is stored as JSON dict of
     {field_name: field_value} for structured parsing.
+
+    Optionally accepts a pre-built notes_lookup dict; if not provided,
+    builds one (less efficient for batch operations).
     """
     from anki_git.engine.import_helpers import load_all_repo_notes
+    from anki_git.formats.notes_md import Note
 
-    repo_notes = load_all_repo_notes(repo_path)
+    if notes_lookup is None:
+        repo_notes = load_all_repo_notes(repo_path)
+    else:
+        repo_notes = notes_lookup
 
     for c in report.conflicts:
         if c.conflict_type != ConflictType.CONFLICT:

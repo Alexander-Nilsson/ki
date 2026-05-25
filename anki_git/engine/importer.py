@@ -97,7 +97,7 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None) -> ImportResult
     from anki_git.engine.checksums import load_meta, save_meta
 
     anki_checksums = import_helpers.compute_anki_checksums(col)
-    git_checksums = import_helpers.compute_git_checksums(repo_path)
+    git_checksums, _ = import_helpers.compute_git_checksums(repo_path)
     meta = load_meta(repo_path)
     base_checksums = meta.get("note_checksums", {})
 

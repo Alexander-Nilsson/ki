@@ -169,7 +169,9 @@ def export_collection(
     # Clean up stale repo files for deleted Anki notes
     if progress_callback:
         progress_callback("Cleaning up stale files...")
-    cleaned = import_helpers.cleanup_stale_repo_notes(col, repo_path)
+    cleaned = import_helpers.cleanup_stale_repo_notes(
+        col, repo_path, anki_nids=set(nids),
+    )
     if cleaned > 0:
         result.notes_deleted_from_repo = cleaned
 
