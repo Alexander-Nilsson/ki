@@ -60,6 +60,7 @@ def export_collection(
     remote_url: str = "",
     progress_callback: Optional[Callable[[str], None]] = None,
     media_strategy: str = "none",
+    quick: bool = False,
 ) -> ExportResult:
     _start = time.perf_counter()
     result = ExportResult()
@@ -96,18 +97,33 @@ def export_collection(
 
     meta_checksums = meta.get("note_checksums", {})
 
-    if progress_callback:
-        progress_callback("Reading notes...")
     db = col.db
     assert db is not None
-    nids = db.list("SELECT id FROM notes WHERE id > 0")
-    total = len(nids)
+
+    if quick and meta.get("last_max_mod"):
+        if progress_callback:
+            progress_callback("Checking for changed notes...")
+        last_max_mod = meta["last_max_mod"]
+        changed_nids = set(
+            db.list("SELECT id FROM notes WHERE mod > ? AND id > 0", last_max_mod)
+        )
+        all_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
+        nids = changed_nids & all_nids
+        total = len(nids)
+        _logger.info("Delta export: %d notes changed since mod %s", total, last_max_mod)
+    else:
+        if progress_callback:
+            progress_callback("Reading notes...")
+        nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
+        all_nids = nids
+        total = len(nids)
+
     notes_by_deck: Dict[str, List[Note]] = {}
-    note_checksums: Dict[str, str] = {}
+    note_checksums = dict(meta_checksums)
     notes_changed = 0
     media_filenames: set = set()
 
-    for i, nid in enumerate(nids):
+    for i, nid in enumerate(sorted(nids)):
         if progress_callback and i % 20 == 0:
             progress_callback(f"Processing notes... {i}/{total}")
         exported = export_helpers.export_single_note(col, repo_path, nid)
@@ -132,11 +148,16 @@ def export_collection(
             for field_value in note.fields.values():
                 media_filenames.update(get_media_filenames_from_fields(field_value))
 
+    # Remove checksums for deleted notes
+    for nid_str in list(note_checksums):
+        if int(nid_str) not in all_nids:
+            del note_checksums[nid_str]
+
     # Clean up stale repo files for deleted Anki notes
     if progress_callback:
         progress_callback("Cleaning up stale files...")
     cleaned = import_helpers.cleanup_stale_repo_notes(
-        col, repo_path, anki_nids=set(nids),
+        col, repo_path, anki_nids=all_nids,
     )
     if cleaned > 0:
         result.notes_deleted_from_repo = cleaned

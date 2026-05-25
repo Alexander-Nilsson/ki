@@ -2,10 +2,9 @@ import datetime
 import logging
 from pathlib import Path
 
-from anki_git.config import KiSyncConfig, SyncMode
+from anki_git.config import KiSyncConfig
 from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
-from anki_git.ui.utils import run_on_main_sync
 
 
 _config = None
@@ -87,138 +86,6 @@ def save_config(config: KiSyncConfig) -> None:
         except Exception as e:
             _logger.warning("Failed to save config: %s", e)
 
-
-def sync_action() -> None:
-    from aqt.qt import QMessageBox
-    from aqt.operations import QueryOp
-    from anki_git.engine.sync import sync_collection
-
-    config = load_config()
-    from aqt import mw
-
-    if not config.repo_path:
-        QMessageBox.warning(
-            mw, "AnkiGit",
-            "Please set a repository path in "
-            "Tools > AnkiGit > Settings first."
-        )
-        return
-
-    if mw is None or mw.col is None:
-        QMessageBox.critical(mw, "AnkiGit", "No collection is open.")
-        return
-
-    if config.background_mode:
-        _logger.info("Background sync triggered from menu")
-        _run_background_sync(config)
-        return
-
-    repo_path = Path(config.repo_path)
-
-    def do_sync(col):
-        _logger.info("Starting two-way sync...")
-
-        def conflict_handler(report):
-            from anki_git.ui import ConflictResolutionDialog
-            def _show():
-                diag = ConflictResolutionDialog(report, mw)
-                diag.exec()
-                return diag.resolved_report
-            return run_on_main_sync(mw, _show)
-
-        sync_mode = config.sync_mode
-        conflict_cb = (
-            conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
-        )
-
-        def preview_handler(preview):
-            from aqt.qt import QMessageBox
-            def _ask():
-                parts = []
-                if preview.notes_to_export:
-                    parts.append(f"Notes to push to repo: {preview.notes_to_export}")
-                if preview.notes_to_import:
-                    parts.append(f"Notes to pull from repo: {preview.notes_to_import}")
-                if preview.notes_to_delete_from_git:
-                    parts.append(f"Notes to delete from repo: {preview.notes_to_delete_from_git}")
-                if preview.notes_to_delete_from_anki:
-                    parts.append(f"Notes to delete from Anki: {preview.notes_to_delete_from_anki}")
-                if preview.notetypes_to_sync:
-                    parts.append(f"Notetypes to sync: {preview.notetypes_to_sync}")
-                if preview.conflicts_unresolved:
-                    parts.append(f"Unresolved conflicts (will be skipped): {preview.conflicts_unresolved}")
-                msg = "\n".join(parts) + "\n\nProceed with sync?"
-                return QMessageBox.question(
-                    mw, "AnkiGit Sync Preview",
-                    msg,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                ) == QMessageBox.StandardButton.Yes
-            return run_on_main_sync(mw, _ask)
-
-        preview_cb = preview_handler if not config.background_mode else None
-
-        return sync_collection(
-            col,
-            repo_path,
-            sync_mode=sync_mode,
-            conflict_callback=conflict_cb,
-            preview_callback=preview_cb,
-            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
-            progress_callback=lambda text: mw.taskman.run_on_main(
-                lambda: mw.progress.update(label=text)
-            ),
-            media_strategy=config.media_strategy,
-        )
-
-    def on_sync_done(result):
-        if result.error:
-            _logger.error("Sync failed: %s", result.error)
-            QMessageBox.critical(
-                mw, "AnkiGit Sync", f"Error: {result.error}"
-            )
-            return
-
-        parts = []
-        if result.notes_exported:
-            parts.append(f"Notes exported: {result.notes_exported}")
-        if result.notes_imported:
-            parts.append(f"Notes imported: {result.notes_imported}")
-        if result.notetypes_exported:
-            parts.append(
-                f"Notetypes exported: {result.notetypes_exported}"
-            )
-        if result.notetypes_imported:
-            parts.append(
-                f"Notetypes imported: {result.notetypes_imported}"
-            )
-        if result.conflicts_resolved:
-            parts.append(
-                f"Conflicts resolved: {result.conflicts_resolved}"
-            )
-        if result.conflicts_unresolved:
-            parts.append(
-                f"Conflicts unresolved: {result.conflicts_unresolved}"
-            )
-        parts.append(f"Duration: {result.duration_seconds:.1f}s")
-
-        if not parts:
-            QMessageBox.information(
-                mw, "AnkiGit Sync",
-                "No changes detected. Everything is in sync."
-            )
-            return
-
-        QMessageBox.information(mw, "AnkiGit Sync", "\n".join(parts))
-
-    def on_sync_failed(e):
-        _logger.exception("Sync operation failed")
-        QMessageBox.critical(mw, "AnkiGit", f"Sync failed: {e}")
-
-    QueryOp(
-        parent=mw,
-        op=do_sync,
-        success=on_sync_done,
-    ).failure(on_sync_failed).with_progress("Syncing...").run_in_background()
 
 
 def snapshot_action() -> None:
@@ -419,6 +286,7 @@ def import_action() -> None:
                     diag = ConflictResolutionDialog(report, mw)
                     diag.exec()
                     return diag.resolved_report
+                from anki_git.ui.utils import run_on_main_sync
                 return run_on_main_sync(mw, _show)
 
             return pull_from_repo(
@@ -532,15 +400,11 @@ def show_menu() -> None:
     if parent_menu is None:
         parent_menu = QMenu("AnkiGit", mw)
 
-    sync_act = QAction("Sync", mw)
-    sync_act.triggered.connect(sync_action)
-    parent_menu.addAction(sync_act)
+    export_act = QAction("Export to Repo", mw)
+    export_act.triggered.connect(snapshot_action)
+    parent_menu.addAction(export_act)
 
-    snapshot_act = QAction("Export to Repo (Snapshot)", mw)
-    snapshot_act.triggered.connect(snapshot_action)
-    parent_menu.addAction(snapshot_act)
-
-    import_act = QAction("Import from Repo (Pull)", mw)
+    import_act = QAction("Import from Repo", mw)
     import_act.triggered.connect(import_action)
     parent_menu.addAction(import_act)
 
@@ -567,161 +431,9 @@ def _get_last_sync_status() -> str:
     return _last_sync_status
 
 
-def _run_background_sync(config: KiSyncConfig) -> None:
-    """Run sync silently with no user dialogs. Only logs errors."""
-    from aqt import mw
-    from aqt.operations import QueryOp
-    from anki_git.engine.sync import sync_collection
-
-    repo_path = Path(config.repo_path)
-
-    def do_sync(col):
-        result = sync_collection(
-            col, repo_path,
-            sync_mode=config.sync_mode,
-            conflict_callback=None,
-            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
-            media_strategy=config.media_strategy,
-        )
-        if result.error:
-            _logger.error("Background sync failed: %s", result.error)
-        else:
-            _logger.info(
-                "Background sync: %d notes exported, %d notes imported",
-                result.notes_exported, result.notes_imported,
-            )
-        return result
-
-    QueryOp(
-        parent=mw,
-        op=do_sync,
-        success=lambda _: None,
-    ).run_in_background()
 
 
-def _run_startup_sync(config: KiSyncConfig) -> None:
-    """Run sync on startup in the background — no modal progress dialog.
-
-    Shows a conflict dialog if there are true conflicts (non-blocking UX),
-    and displays a small non-blocking notification with change counts when
-    done.  Updates the global sync status for the settings dialog.
-    """
-    from aqt import mw
-    from aqt.operations import QueryOp
-    from anki_git.engine.sync import sync_collection
-
-    repo_path = Path(config.repo_path)
-
-    def do_sync(col):
-        def conflict_handler(report):
-            from anki_git.ui import ConflictResolutionDialog
-            def _show():
-                diag = ConflictResolutionDialog(report, mw)
-                diag.exec()
-                return diag.resolved_report
-            return run_on_main_sync(mw, _show)
-
-        sync_mode = config.sync_mode
-        conflict_cb = (
-            conflict_handler if sync_mode == SyncMode.ALWAYS_ASK else None
-        )
-
-        result = sync_collection(
-            col, repo_path,
-            sync_mode=sync_mode,
-            conflict_callback=conflict_cb,
-            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
-            media_strategy=config.media_strategy,
-        )
-        if result.error:
-            _logger.error("Startup sync failed: %s", result.error)
-        else:
-            _logger.info(
-                "Startup sync: %d notes exported, %d notes imported",
-                result.notes_exported, result.notes_imported,
-            )
-        return result
-
-    def on_sync_done(result):
-        global _last_sync_status
-        if result.error:
-            _last_sync_status = f"Error: {result.error}"
-            return
-        _last_sync_status = _format_sync_status(result)
-        if result.notes_exported > 0 or result.notes_imported > 0:
-            _show_sync_notification(result)
-
-    QueryOp(
-        parent=mw,
-        op=do_sync,
-        success=on_sync_done,
-    ).run_in_background()
-
-
-def _format_sync_status(result) -> str:
-    """Build a short human-readable sync status string."""
-    parts = []
-    if result.notes_exported:
-        parts.append(f"{result.notes_exported} to repo")
-    if result.notes_imported:
-        parts.append(f"{result.notes_imported} to Anki")
-    if result.notes_deleted_from_git:
-        parts.append(f"{result.notes_deleted_from_git} deleted from repo")
-    if result.notes_deleted_from_anki:
-        parts.append(f"{result.notes_deleted_from_anki} deleted from Anki")
-    if result.notetypes_exported:
-        parts.append(f"{result.notetypes_exported} notetypes to repo")
-    if result.notetypes_imported:
-        parts.append(f"{result.notetypes_imported} notetypes to Anki")
-    if result.conflicts_unresolved:
-        parts.append(f"{result.conflicts_unresolved} conflicts left unresolved")
-    if not parts:
-        return "Up to date"
-    return ", ".join(parts) + f" ({result.duration_seconds:.1f}s)"
-
-
-def _show_sync_notification(result) -> None:
-    """Show a non-blocking notification with sync change counts."""
-    from aqt import mw
-    from aqt.qt import QMessageBox
-
-    if result.error:
-        return
-
-    parts = []
-    if result.notes_exported:
-        parts.append(f"Notes exported: {result.notes_exported}")
-    if result.notes_imported:
-        parts.append(f"Notes imported: {result.notes_imported}")
-    if result.notes_deleted_from_git:
-        parts.append(f"Notes deleted from repo: {result.notes_deleted_from_git}")
-    if result.notes_deleted_from_anki:
-        parts.append(f"Notes deleted from Anki: {result.notes_deleted_from_anki}")
-    if result.notetypes_exported:
-        parts.append(f"Notetypes exported: {result.notetypes_exported}")
-    if result.notetypes_imported:
-        parts.append(f"Notetypes imported: {result.notetypes_imported}")
-    if result.conflicts_unresolved:
-        parts.append(f"Conflicts unresolved: {result.conflicts_unresolved}")
-
-    if not parts:
-        return
-
-    def show():
-        msg = QMessageBox(mw)
-        msg.setIcon(QMessageBox.Icon.Information)
-        msg.setWindowTitle("AnkiGit Sync")
-        msg.setText("Startup sync complete")
-        msg.setInformativeText("\n".join(parts))
-        msg.setDetailedText(f"Duration: {result.duration_seconds:.1f}s")
-        msg.setStandardButtons(QMessageBox.StandardButton.Ok)
-        msg.setModal(False)
-        msg.show()
-
-    mw.taskman.run_on_main(show)
-
-
-def _run_background_export(config: KiSyncConfig) -> None:
+def _run_background_export(config: KiSyncConfig, quick: bool = False) -> None:
     """Run exporter silently with no user dialogs. Only logs errors."""
     from aqt import mw
     from aqt.operations import QueryOp
@@ -734,6 +446,7 @@ def _run_background_export(config: KiSyncConfig) -> None:
             col, repo_path,
             remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
             media_strategy=config.media_strategy,
+            quick=quick,
         )
         if result.error:
             _logger.error("Background export failed: %s", result.error)
@@ -751,6 +464,155 @@ def _run_background_export(config: KiSyncConfig) -> None:
     ).run_in_background()
 
 
+def _try_fetch(remote) -> None:
+    try:
+        remote.fetch()
+    except Exception:
+        pass
+
+
+def _fetch_remote_background(repo_path: Path) -> None:
+    """Fire-and-forget git fetch from origin in a daemon thread."""
+    from anki_git.engine.git_ops import open_repo
+    import threading
+
+    repo = open_repo(repo_path)
+    if repo is None:
+        return
+    try:
+        remote = repo.remote("origin")
+        threading.Thread(
+            target=lambda: _try_fetch(remote),
+            daemon=True,
+        ).start()
+    except (ValueError, Exception):
+        pass
+
+
+def _run_startup_import(config: KiSyncConfig) -> None:
+    """Show import diff on startup. Let user accept/reject repo changes."""
+    from aqt import mw
+    from aqt.qt import QMessageBox
+    from aqt.operations import QueryOp
+    from anki_git.ui import DiffDialog
+    from anki_git.engine.diff import compute_import_diff
+
+    repo_path = Path(config.repo_path)
+
+    def do_diff(col):
+        _logger.info("Computing startup import diff...")
+        report = compute_import_diff(
+            col, repo_path,
+            progress_callback=lambda text: mw.taskman.run_on_main(
+                lambda: mw.progress.update(label=text)
+            ),
+        )
+        if not report.has_changes:
+            return report, None
+
+        mw.taskman.run_on_main(
+            lambda: mw.progress.update(label="Preparing preview...")
+        )
+        from anki_git.ui.diff import report_to_diff_data
+        ui_data = report_to_diff_data(report)
+        return report, ui_data
+
+    def on_diff_done(result_tuple):
+        report, ui_data = result_tuple
+        if not report or not report.has_changes:
+            _logger.info("No repo changes to import on startup")
+            return
+
+        diff_dialog = DiffDialog(ui_data, mw)
+        if not diff_dialog.exec():
+            _logger.info("User discarded startup import changes")
+            return
+
+        _logger.info("User accepted startup import, starting import...")
+
+        def do_import(col):
+            col_path = Path(col.path)
+            backup_path = (
+                repo_path / ".ki" / "backups"
+                / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+            )
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            backup_path.write_bytes(col_path.read_bytes())
+
+            from anki_git.engine.importer import pull_from_repo
+            result = pull_from_repo(
+                col, repo_path,
+                sync_mode=config.sync_mode,
+            )
+
+            from anki_git.engine.git_ops import (
+                get_or_init_repo, stage_files, push_to_remote,
+            )
+            verify_repo = get_or_init_repo(repo_path)
+            meta_path = repo_path / ".ki" / "meta.json"
+            if meta_path.exists():
+                stage_files(verify_repo, [str(meta_path.relative_to(repo_path))])
+                num_notes = result.notes_updated + result.notes_created
+                num_nt = result.notetypes_updated + result.notetypes_created
+                msg_parts = []
+                if num_notes:
+                    msg_parts.append(f"{num_notes} notes")
+                if num_nt:
+                    msg_parts.append(f"{num_nt} notetypes")
+                detail = ", ".join(msg_parts) if msg_parts else "metadata"
+                verify_repo.index.commit(f"Import {detail} from repo")
+
+            remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
+            if remote_url:
+                push_to_remote(verify_repo, remote_url)
+
+            return result
+
+        def on_import_done(result):
+            if result.error:
+                QMessageBox.critical(
+                    mw, "AnkiGit", f"Import failed: {result.error}"
+                )
+                return
+
+            parts = []
+            if result.notes_updated:
+                parts.append(f"Notes updated: {result.notes_updated}")
+            if result.notes_created:
+                parts.append(f"Notes created: {result.notes_created}")
+            if result.notetypes_updated:
+                parts.append(f"Notetypes updated: {result.notetypes_updated}")
+            if result.notetypes_created:
+                parts.append(f"Notetypes created: {result.notetypes_created}")
+            if result.warnings:
+                parts.append("Warnings: " + "; ".join(result.warnings[:3]))
+            msg = "\n".join(parts) if parts else "Import complete."
+            QMessageBox.information(mw, "AnkiGit Import", msg)
+            mw.reset()
+
+        def on_import_failed(e):
+            QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")
+
+        QueryOp(
+            parent=mw,
+            op=do_import,
+            success=on_import_done,
+        ).failure(on_import_failed).with_progress(
+            "Importing from repo..."
+        ).run_in_background()
+
+    def on_diff_failed(e):
+        QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
+
+    QueryOp(
+        parent=mw,
+        op=do_diff,
+        success=on_diff_done,
+    ).failure(on_diff_failed).with_progress(
+        "Checking for changes..."
+    ).run_in_background()
+
+
 def on_profile_open() -> None:
     global _menu_shown
     if not _menu_shown:
@@ -760,41 +622,64 @@ def on_profile_open() -> None:
     if config.auto_sync_on_startup and config.repo_path:
         from aqt import mw
         if mw and mw.col:
+            repo_path = Path(config.repo_path)
+            if not (repo_path / ".git").exists():
+                return
+            _fetch_remote_background(repo_path)
             from anki_git.engine.checksums import quick_has_changes
             try:
-                result = quick_has_changes(mw.col, Path(config.repo_path))
-                if result is False:
-                    _logger.info("No changes detected, skipping startup sync")
+                result = quick_has_changes(mw.col, repo_path)
+                if result is False or result is None:
+                    _logger.info(
+                        "No changes or no baseline, skipping startup import"
+                    )
                     return
             except Exception:
                 pass
-        _run_startup_sync(config)
+        _run_startup_import(config)
 
 
 def on_profile_close() -> None:
     config = load_config()
     if config.auto_snapshot_on_close and config.repo_path:
+        from aqt import mw
+        if mw is None or mw.col is None:
+            return
+        repo_path = Path(config.repo_path)
+        if not (repo_path / ".git").exists():
+            return
+
+        from anki_git.engine.checksums import quick_has_changes
+        try:
+            result = quick_has_changes(mw.col, repo_path)
+            if result is False:
+                _logger.info("No changes detected, skipping auto-export")
+                return
+        except Exception:
+            pass
+
+        remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
+
         if config.background_mode:
-            _run_background_export(config)
+            _run_background_export(config, quick=True)
         else:
             try:
-                from aqt import mw
-                if mw is not None and mw.col is not None:
-                    repo_path = Path(config.repo_path)
-                    mw.progress.start(
-                        label="Auto-snapshotting...", immediate=True
+                mw.progress.start(
+                    label="Auto-syncing changes...", immediate=True
+                )
+                try:
+                    export_collection(
+                        mw.col, repo_path,
+                        remote_url=remote_url,
+                        media_strategy=config.media_strategy,
+                        progress_callback=lambda text: (
+                            mw.progress.update(label=text),
+                            mw.app.processEvents()
+                        ) and None,
+                        quick=True,
                     )
-                    try:
-                        export_collection(
-                            mw.col, repo_path,
-                            media_strategy=config.media_strategy,
-                            progress_callback=lambda text: (
-                                mw.progress.update(label=text),
-                                mw.app.processEvents()
-                            ) and None
-                        )
-                    finally:
-                        mw.progress.finish()
+                finally:
+                    mw.progress.finish()
             except Exception as e:
                 _logger.warning("Auto-snapshot on close failed: %s", e)
 

@@ -1,10 +1,9 @@
 {
     "repo_path": "",
-    "auto_sync_on_startup": false,
-    "auto_snapshot_on_close": false,
-    "debounce_delay_ms": 2000,
+    "auto_sync_on_startup": true,
+    "auto_snapshot_on_close": true,
     "media_strategy": "none",
-    "auto_push_after_snapshot": false,
+    "auto_push_after_snapshot": true,
     "log_level": "INFO",
     "sync_mode": "always_ask",
     "background_mode": false

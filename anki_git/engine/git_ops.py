@@ -76,6 +76,15 @@ def create_snapshot_commit(
     repo.index.commit(message)
 
 
+def fetch_remote(repo: Repo) -> None:
+    """Fire-and-forget fetch from origin. Silently ignores errors."""
+    try:
+        remote = repo.remote("origin")
+        remote.fetch()
+    except Exception:
+        pass
+
+
 def push_to_remote(repo: Repo, remote_url: str) -> None:
     if not remote_url:
         return

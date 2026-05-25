@@ -23,7 +23,7 @@ class KiSyncConfig:
     auto_sync_on_startup: bool = True
     auto_snapshot_on_close: bool = True
     media_strategy: str = "none"
-    auto_push_after_snapshot: bool = False
+    auto_push_after_snapshot: bool = True
     log_level: str = "INFO"
     sync_mode: str = SyncMode.ALWAYS_ASK
     background_mode: bool = False
