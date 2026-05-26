@@ -104,8 +104,14 @@ def get_commit_count(repo: Repo) -> int:
 
 def ensure_gitignore(repo_root: Path) -> None:
     gitignore = repo_root / ".gitignore"
-    if not gitignore.exists():
-        gitignore.write_text(".ki/backups\n", encoding="utf-8")
+    lines = [".ki/backups", ".ki/meta.json"]
+    existing = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
+    new_lines = [l for l in lines if l not in existing]
+    if new_lines:
+        gitignore.write_text(
+            "\n".join(existing + new_lines) + "\n",
+            encoding="utf-8",
+        )
 
 
 def get_existing_remote_url(repo: Repo) -> str:

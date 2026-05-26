@@ -37,21 +37,24 @@ def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
     Returns False if definitely no repo changes, True if changes exist,
     or None if there is no baseline yet (first run).
     """
-    from anki_git.engine.git_ops import is_dirty, open_repo
+    from anki_git.engine.git_ops import open_repo
 
     meta = load_meta(repo_path)
-    last_sha = meta.get("last_commit_sha")
-
-    if last_sha is None:
+    if not meta:
         return None
 
     repo = open_repo(repo_path)
     if repo is None:
         return True
-    if is_dirty(repo):
-        return True
-    if str(repo.head.commit) != last_sha:
-        return True
+
+    # Check for working tree changes, ignoring .ki/meta.json
+    # (untracked and gitignored — always modified after a commit).
+    for item in repo.index.diff(None):
+        if item.a_path != ".ki/meta.json":
+            return True
+    for f in repo.untracked_files:
+        if f != ".ki/meta.json":
+            return True
 
     return False
 
@@ -69,7 +72,6 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     meta = load_meta(repo_path)
     last_count = meta.get("last_note_count")
     last_max_mod = meta.get("last_max_mod")
-    last_sha = meta.get("last_commit_sha")
 
     if last_count is None or last_max_mod is None:
         return None
@@ -86,8 +88,6 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     if repo is None:
         return True
     if is_dirty(repo):
-        return True
-    if last_sha and str(repo.head.commit) != last_sha:
         return True
 
     return False

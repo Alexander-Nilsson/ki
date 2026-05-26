@@ -92,28 +92,6 @@ def test_quick_has_changes_no_changes(tmp_path):
     assert result is False
 
 
-def test_quick_has_changes_sha_differs(tmp_path):
-    """Returns True when commit SHA changed."""
-    from unittest.mock import MagicMock
-    from anki_git.engine.checksums import quick_has_changes, save_meta
-    from anki_git.engine.git_ops import init_repo, stage_all
-
-    repo = init_repo(tmp_path)
-    f = tmp_path / "dummy.txt"
-    f.write_text("content", encoding="utf-8")
-    stage_all(repo)
-    repo.index.commit("initial")
-
-    save_meta(tmp_path, {
-        "last_note_count": 5, "last_max_mod": 100,
-        "last_commit_sha": "oldsha",
-    })
-    col = MagicMock()
-    col.db.scalar.side_effect = [5, 100]
-    result = quick_has_changes(col, tmp_path)
-    assert result is True
-
-
 def test_quick_repo_has_changes_no_baseline(tmp_path):
     """Returns None when no meta baseline exists."""
     from anki_git.engine.checksums import quick_repo_has_changes
@@ -130,8 +108,8 @@ def test_quick_repo_has_changes_no_repo(tmp_path):
     assert result is True
 
 
-def test_quick_repo_has_changes_sha_matches(tmp_path):
-    """Returns False when HEAD SHA matches stored SHA and repo is clean."""
+def test_quick_repo_has_changes_clean(tmp_path):
+    """Returns False when repo is clean and has baseline."""
     from anki_git.engine.checksums import quick_repo_has_changes, save_meta
     from anki_git.engine.git_ops import init_repo
 
@@ -139,43 +117,24 @@ def test_quick_repo_has_changes_sha_matches(tmp_path):
     (tmp_path / ".gitignore").write_text(".ki/\n", encoding="utf-8")
     repo.index.add([".gitignore"])
     repo.index.commit("init")
-    sha = str(repo.head.commit)
 
-    save_meta(tmp_path, {"last_commit_sha": sha})
+    save_meta(tmp_path, {"last_commit_sha": str(repo.head.commit)})
 
     result = quick_repo_has_changes(tmp_path)
     assert result is False
 
 
-def test_quick_repo_has_changes_sha_differs(tmp_path):
-    """Returns True when HEAD SHA differs from stored SHA."""
-    from anki_git.engine.checksums import quick_repo_has_changes, save_meta
-    from anki_git.engine.git_ops import init_repo, stage_all
-
-    repo = init_repo(tmp_path)
-    f = tmp_path / "dummy.txt"
-    f.write_text("content", encoding="utf-8")
-    stage_all(repo)
-    repo.index.commit("initial")
-
-    save_meta(tmp_path, {"last_commit_sha": "oldsha"})
-    result = quick_repo_has_changes(tmp_path)
-    assert result is True
-
-
 def test_quick_repo_has_changes_dirty(tmp_path):
     """Returns True when repo has uncommitted changes."""
-    import json
-    from anki_git.engine.checksums import quick_repo_has_changes
+    from anki_git.engine.checksums import quick_repo_has_changes, save_meta
     from anki_git.engine.git_ops import init_repo
 
     repo = init_repo(tmp_path)
     (tmp_path / ".gitignore").write_text("", encoding="utf-8")
     repo.index.add([".gitignore"])
     repo.index.commit("init")
-    sha = str(repo.head.commit)
 
-    save_meta(tmp_path, {"last_commit_sha": sha})
+    save_meta(tmp_path, {"last_commit_sha": str(repo.head.commit)})
 
     # Make repo dirty
     (tmp_path / "dirty.txt").write_text("dirty", encoding="utf-8")

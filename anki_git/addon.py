@@ -454,30 +454,32 @@ def _fetch_remote_background(repo_path: Path) -> None:
 def _run_startup_import(config: KiSyncConfig) -> None:
     """Show import diff on startup. Let user accept/reject repo changes.
 
-    Runs entirely in background — first checks if the repo has any changes,
-    and only proceeds to full diff analysis if needed.
+    Runs a synchronous git-only check first — only shows a progress dialog
+    if changes are actually detected in the repo.
     """
     from aqt import mw
     from aqt.qt import QMessageBox
     from aqt.operations import QueryOp
     from anki_git.ui import DiffDialog
     from anki_git.engine.diff import compute_import_diff
+    from anki_git.engine.checksums import quick_repo_has_changes
 
     repo_path = Path(config.repo_path)
 
-    def do_startup_check(col):
-        # Quick check: only repo-side changes matter for startup import
-        from anki_git.engine.checksums import quick_repo_has_changes
-        try:
-            has_changes = quick_repo_has_changes(repo_path)
-            if has_changes is False or has_changes is None:
-                _logger.info("No repo changes, skipping startup import")
-                return None
-        except Exception:
-            _logger.warning(
-                "quick_repo_has_changes failed on startup", exc_info=True
-            )
+    # Synchronous git-only check — no collection access, no dialog
+    try:
+        has_changes = quick_repo_has_changes(repo_path)
+        _logger.info("quick_repo_has_changes returned: %s", has_changes)
+        if has_changes is False or has_changes is None:
+            _logger.info("No repo changes, skipping startup import")
+            return
+    except Exception:
+        _logger.warning(
+            "quick_repo_has_changes failed on startup", exc_info=True
+        )
 
+    # Changes detected — proceed with full diff inside a QueryOp (shows progress)
+    def do_startup_check(col):
         _logger.info("Computing startup import diff...")
         report = compute_import_diff(
             col, repo_path,

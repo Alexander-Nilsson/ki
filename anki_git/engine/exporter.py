@@ -274,6 +274,8 @@ def write_export_data(
             str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
         )
         stage_files(repo, list(changed_files))
+        meta_rel = str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
+        repo.index.add([meta_rel], force=True)
         create_snapshot_commit(repo, list(changed_files))
         if remote_url:
             if progress_callback:
