@@ -10,10 +10,10 @@ class SyncMode(StrEnum):
 
 
 SYNC_MODE_CHOICES = [
-    (SyncMode.ALWAYS_ASK, "Always ask"),
-    (SyncMode.PREFER_ANKI, "Anki wins"),
-    (SyncMode.PREFER_REPO, "Repo wins"),
-    (SyncMode.ACCEPT_ALL, "Accept all (auto-resolve)"),
+    (SyncMode.ALWAYS_ASK, "Always ask — show conflict dialog"),
+    (SyncMode.PREFER_ANKI, "Prefer Anki — auto-resolve with Anki version"),
+    (SyncMode.PREFER_REPO, "Prefer Repo — auto-resolve with repo version"),
+    (SyncMode.ACCEPT_ALL, "Accept all — auto-merge when safe; Anki wins on true conflict"),
 ]
 
 

@@ -45,12 +45,12 @@ class SettingsDialog(QDialog):
 
         sync_group = QGroupBox("Sync Behavior", self)
         sync_layout = QFormLayout(sync_group)
-        self._auto_startup_cb = QCheckBox("Auto-sync on startup", self)
+        self._auto_startup_cb = QCheckBox("Import from repo when Anki starts", self)
         sync_layout.addRow(self._auto_startup_cb)
-        self._auto_close_cb = QCheckBox("Auto-snapshot on close", self)
+        self._auto_close_cb = QCheckBox("Export to repo when Anki closes", self)
         sync_layout.addRow(self._auto_close_cb)
 
-        self._auto_push_cb = QCheckBox("Auto-push after snapshot", self)
+        self._auto_push_cb = QCheckBox("Push to remote after export", self)
         sync_layout.addRow(self._auto_push_cb)
 
         self._sync_mode_combo = QComboBox(self)
@@ -59,10 +59,10 @@ class SettingsDialog(QDialog):
         sync_layout.addRow("Conflict resolution:", self._sync_mode_combo)
 
         mode_note = QLabel(
-            "Always ask: show dialog for each conflict\n"
-            "Anki wins: auto-resolve in favor of Anki\n"
-            "Repo wins: auto-resolve in favor of repo\n"
-            "Accept all: auto-accept non-conflicting changes; for true conflicts Anki wins"
+            "Always ask: prompts when Anki and repo disagree\n"
+            "Prefer Anki: auto-resolves using the Anki version\n"
+            "Prefer Repo: auto-resolves using the repo version\n"
+            "Accept all: auto-merges when safe; Anki wins on real conflicts"
         )
         mode_note.setStyleSheet("color: #888; font-size: 11px;")
         sync_layout.addRow("", mode_note)

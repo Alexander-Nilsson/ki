@@ -46,6 +46,7 @@ anki_git/
 - **Match notes by nid**, notetypes by name.
 - **Auto-snapshot on close** uses `quick=True` (delta: only `mod > last_max_mod`) — fast.
 - **Auto-sync on startup** uses `quick_has_changes()` first — instant skip if nothing changed. No mid-session auto-export.
+- **Data pass-through between diff and apply phases** — both import and export flows compute raw parsed data during the diff preview and pass it to the apply phase, avoiding redundant collection/filesystem scans.
 
 ## Commands
 
@@ -58,26 +59,45 @@ uv run python build.py all                   # clean → build → package .anki
 uv run python scripts/release.py 0.2.0       # bump version, tag, push
 ```
 
-## Flows (Startup / Close)
+## Flows
 
-**Startup (`on_profile_open`)**:
+**Startup / Import (`on_profile_open`, `import_action`)**:
 1. Show menu (once per session)
 2. Fire-and-forget `git fetch` in daemon thread (non-blocking)
 3. `quick_has_changes()` — 2 SQL queries + git status check (~5ms)
 4. No changes → return silently (instant)
-5. Changes detected → `_run_startup_import()`:
-   - `QueryOp`: compute `compute_import_diff()` with progress dialog
-   - `DiffDialog`: show changes, user accepts/rejects
-   - Accepted → backup → `pull_from_repo()` → verification commit (`"Import N notes from repo"`) → push
-   - Rejected → silent exit
+5. Changes detected → `QueryOp`: `compute_import_diff_delta()`:
+   - Uses `git status --porcelain` + `git diff --name-status` to find only changed repo files
+   - Parses only those files, looks up only their Anki counterparts
+   - Returns `ImportDiffData` (report + raw parsed notes + checksums)
+6. `DiffDialog`: show changes, user accepts/rejects
+7. Accepted → backup → `pull_from_repo()` with pre-computed `ImportDiffData`:
+   - `import_notes()` and `import_notetypes()` skip re-scanning
+   - Verification commit → push
+8. Rejected → silent exit
+
+**Export / Snapshot (`snapshot_action`)**:
+1. `compute_export_diff_delta()`:
+   - Delta: `SELECT id FROM notes WHERE mod > last_max_mod` on Anki side
+   - `get_changed_repo_files()` for any git-side changes
+   - Parses only affected `.md` files, fetches only affected Anki notes
+   - Returns `ExportDiffData` (report + serialized note entries + checksums + all_nids)
+   - Falls back to full scan if no `last_commit_sha` baseline exists
+2. `DiffDialog`: show changes, user accepts/rejects
+3. Accepted → `export_collection(export_data=...)`:
+   - Skips `capture_export_data()` — builds `CapturedExport` from pre-computed data
+   - Only issues 3 fast scalar queries (`all_nids`, `MAX(mod)`, `COUNT(*)`) for freshness
+   - `write_export_data()` writes only changed files + stale cleanup by nid-from-filename (no file reads)
 
 **Close (`on_profile_close`)**:
 1. Guard: repo exists, collection open
 2. `quick_has_changes()` → no changes → return instantly
-3. `export_collection(quick=True, remote_url=...)`:
-   - Only processes notes where `mod > last_max_mod` (delta, not full walk)
-   - Removes checksums for deleted notes
-   - Commits + pushes to remote
+3. `capture_export_data(quick=True)` (sync, needs collection):
+   - Delta: `SELECT id FROM notes WHERE mod > last_max_mod`
+   - Returns serialized `CapturedExport` — no longer needs collection access
+4. Background thread: `write_export_data()`:
+   - Writes files, git commit, push
+   - No collection access required
 
 ## Quirks
 
