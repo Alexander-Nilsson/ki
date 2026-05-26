@@ -13,9 +13,11 @@ anki_git/
 │   ├── exporter.py      # Anki→files (one-way snapshot; supports quick delta mode)
 │   ├── importer.py      # files→Anki (one-way pull via conflict pipeline)
 │   ├── sync.py          # Two-way sync: merge changes in both directions
-│   ├── git_ops.py       # GitPython operations (incl. fetch_remote)
+│   ├── git_ops.py       # GitPython operations
 │   ├── conflict.py      # Three-way merge + auto-resolution by sync_mode
-│   └── checksums.py     # meta.json hashing + quick_has_changes()
+│   ├── checksums.py     # meta.json hashing + quick_has_changes()
+│   ├── export_helpers.py# Shared export helpers (single note export)
+│   └── import_helpers.py# Shared import helpers (checksums, batch import)
 ├── formats/
 │   ├── notes_md.py      # One file per note: decks/<Deck>/<nid>.md
 │   ├── notetype_yaml.py # notetypes/<Name>.yaml + <Name>.css
@@ -24,7 +26,7 @@ anki_git/
 │   ├── settings.py      # Settings dialog (includes sync_mode selector)
 │   ├── conflicts.py     # Conflict resolution dialog
 │   ├── diff.py           # Diff preview dialog
-│   └── history.py       # Commit history dialog
+│   └── utils.py         # Shared UI utilities (run_on_main_sync)
 └── config.json          # Anki addon config manager schema
 ```
 
@@ -82,9 +84,8 @@ uv run python scripts/release.py 0.2.0       # bump version, tag, push
 - **Python ≥ 3.13** only.
 - **Version in two places** — update both `pyproject.toml` AND `anki_git/__init__.py`.
 - **`engine/importer.py`** uses `rglob("*.md")` which matches both `<nid>.md` and legacy `notes.md` — `parse_notes_file()` handles both formats.
-- **Menu:** "Export to Repo" (Anki→Git), "Import from Repo" (Git→Anki), "View History", "Settings..."
+- **Menu:** "Export to Repo" (Anki→Git), "Import from Repo" (Git→Anki), "Settings..."
 - **Ruff + pyright** for static analysis. Config in `pyproject.toml`.
-- **CI ignores legacy files** that don't exist anymore: `--ignore=tests/test_ki.py --ignore=tests/test_integration.py --ignore=tests/test_package.py --ignore=tests/test_parser.py`.
 - **License is AGPL-3.0-only**.
 - **Fixtures** in `tests/conftest.py` provide `anki_session` (headless Anki) and `mock_aqt_mw`.
 - **Pre-commit hooks** available (`.pre-commit-config.yaml`).**

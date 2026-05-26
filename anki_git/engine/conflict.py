@@ -19,12 +19,15 @@ Conflict cases:
 """
 
 import json
+import logging
 from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional, TYPE_CHECKING
 from dataclasses import dataclass, field
 
 from anki_git.config import SyncMode
+
+_logger = logging.getLogger("anki_git")
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
@@ -262,6 +265,7 @@ def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
                 dict(note_obj.items()), ensure_ascii=False
             )
         except Exception:
+            _logger.debug("Failed to get anki content for nid %d", c.nid, exc_info=True)
             c.anki_content = "{}"
 
         repo_note = repo_notes.get(c.nid)

@@ -38,6 +38,7 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
         try:
             note_obj = col.get_note(nid)
         except Exception:
+            _logger.warning("Failed to get note %d for checksum", nid, exc_info=True)
             continue
         nt_dict = note_obj.note_type()
         if nt_dict is None:
@@ -49,6 +50,7 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
                 continue
             deck_name = col.decks.name(cards[0].did)
         except Exception:
+            _logger.warning("Failed to get deck for note %d for checksum", nid, exc_info=True)
             continue
         note = Note(
             nid=nid, notetype=nt_name, tags=list(note_obj.tags),
@@ -106,6 +108,7 @@ def import_single_note(col: Collection, repo_path: Path, nid: int,
     try:
         existing = col.get_note(NoteId(nid))
     except Exception:
+        _logger.debug("Note %d not found in Anki, will create", nid)
         existing = None
 
     if existing is not None:
@@ -262,6 +265,7 @@ def import_notes(col: Collection, repo_path: Path, result,
             try:
                 existing = col.get_note(NoteId(note_data.nid))
             except Exception:
+                _logger.debug("Note %d not found in Anki during batch import", note_data.nid)
                 existing = None
 
             if existing is not None:

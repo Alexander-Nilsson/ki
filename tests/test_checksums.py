@@ -4,9 +4,7 @@ import tempfile
 import json
 
 from anki_git.engine.checksums import (
-    file_hash,
     content_hash,
-    notes_hash,
     load_meta,
     save_meta,
 )
@@ -24,21 +22,96 @@ def test_content_hash_differs():
     assert content_hash("foo") != content_hash("bar")
 
 
-def test_file_hash(tmp_path):
-    f = tmp_path / "test.txt"
-    f.write_text("hello", encoding="utf-8")
-    h = file_hash(f)
-    assert isinstance(h, str)
-    assert len(h) == 32
+def test_quick_has_changes_no_baseline():
+    """Returns None when no meta baseline exists."""
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes
+
+    col = MagicMock()
+    result = quick_has_changes(col, Path("/nonexistent"))
+    assert result is None
 
 
-def test_notes_hash():
-    notes = {1: "content1", 2: "content2"}
-    hashes = notes_hash(notes)
-    assert "1" in hashes
-    assert "2" in hashes
-    assert hashes["1"] == content_hash("content1")
-    assert hashes["2"] == content_hash("content2")
+def test_quick_has_changes_count_differs(tmp_path):
+    """Returns True when note count changed."""
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes, save_meta
+
+    save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
+    col = MagicMock()
+    col.db.scalar.side_effect = [10, 200]
+    result = quick_has_changes(col, tmp_path)
+    assert result is True
+
+
+def test_quick_has_changes_mod_differs(tmp_path):
+    """Returns True when max mod changed."""
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes, save_meta
+
+    save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
+    col = MagicMock()
+    col.db.scalar.side_effect = [5, 200]
+    result = quick_has_changes(col, tmp_path)
+    assert result is True
+
+
+def test_quick_has_changes_no_repo(tmp_path):
+    """Returns True when repo path has no valid git repo."""
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes, save_meta
+
+    save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
+    col = MagicMock()
+    col.db.scalar.side_effect = [5, 100]
+    result = quick_has_changes(col, tmp_path)
+    assert result is True
+
+
+def test_quick_has_changes_no_changes(tmp_path):
+    """Returns False when nothing changed (no SHA stored, not dirty)."""
+    import json
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes
+    from anki_git.engine.git_ops import init_repo
+
+    repo = init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("", encoding="utf-8")
+    repo.index.add([".gitignore"])
+    repo.index.commit("init")
+    meta_path = tmp_path / ".ki" / "meta.json"
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps({
+        "last_note_count": 5, "last_max_mod": 100,
+    }, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+    repo.index.add([".ki/meta.json"])
+    repo.index.commit("meta")
+    col = MagicMock()
+    col.db.scalar.side_effect = [5, 100]
+    result = quick_has_changes(col, tmp_path)
+    assert result is False
+
+
+def test_quick_has_changes_sha_differs(tmp_path):
+    """Returns True when commit SHA changed."""
+    from unittest.mock import MagicMock
+    from anki_git.engine.checksums import quick_has_changes, save_meta
+    from anki_git.engine.git_ops import init_repo, stage_all
+
+    repo = init_repo(tmp_path)
+    f = tmp_path / "dummy.txt"
+    f.write_text("content", encoding="utf-8")
+    stage_all(repo)
+    repo.index.commit("initial")
+
+    save_meta(tmp_path, {
+        "last_note_count": 5, "last_max_mod": 100,
+        "last_commit_sha": "oldsha",
+    })
+    col = MagicMock()
+    col.db.scalar.side_effect = [5, 100]
+    result = quick_has_changes(col, tmp_path)
+    assert result is True
 
 
 def test_save_and_load_meta(tmp_path):

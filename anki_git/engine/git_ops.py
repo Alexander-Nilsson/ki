@@ -1,8 +1,6 @@
-import datetime
 import logging
 from pathlib import Path
 from typing import Optional
-from datetime import timezone
 
 from git import Repo, GitCommandError, InvalidGitRepositoryError
 
@@ -56,10 +54,6 @@ def stage_files(repo: Repo, paths: list[str]) -> None:
     repo.index.add(paths)
 
 
-def commit(repo: Repo, message: str) -> None:
-    repo.index.commit(message)
-
-
 def create_snapshot_commit(
     repo: Repo,
     changed_files: list[str],
@@ -74,15 +68,6 @@ def create_snapshot_commit(
     body = "\n".join(f"- {f}" for f in sorted_files)
     message = f"{subject}\n\n{body}" if len(sorted_files) > 5 else subject
     repo.index.commit(message)
-
-
-def fetch_remote(repo: Repo) -> None:
-    """Fire-and-forget fetch from origin. Silently ignores errors."""
-    try:
-        remote = repo.remote("origin")
-        remote.fetch()
-    except Exception:
-        pass
 
 
 def push_to_remote(repo: Repo, remote_url: str) -> None:
@@ -113,6 +98,7 @@ def get_commit_count(repo: Repo) -> int:
     try:
         return len(list(repo.iter_commits()))
     except Exception:
+        _logger.exception("Failed to get commit count")
         return 0
 
 
@@ -127,4 +113,5 @@ def get_existing_remote_url(repo: Repo) -> str:
     try:
         return repo.remote("origin").url
     except (ValueError, Exception):
+        _logger.debug("No remote 'origin' configured")
         return ""

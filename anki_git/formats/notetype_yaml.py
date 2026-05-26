@@ -87,8 +87,12 @@ class Notetype:
     def __eq__(self, other):
         if not isinstance(other, Notetype):
             return NotImplemented
-        return (self.name == other.name and self.fields == other.fields
-                and self.templates == other.templates and self.css == other.css)
+        return (self.name == other.name and self.id == other.id
+                and self.fields == other.fields
+                and self.templates == other.templates
+                and self.css == other.css
+                and self.sort_field == other.sort_field
+                and self.type == other.type)
 
     @classmethod
     def from_anki_dict(cls, d: dict) -> "Notetype":
@@ -280,5 +284,9 @@ def read_all_notetypes(notetypes_root: Path) -> Dict[str, Notetype]:
                 if nt:
                     result[nt.name] = nt
             except Exception:
+                import logging
+                logging.getLogger("anki_git").warning(
+                    "Failed to read notetype from %s", entry, exc_info=True
+                )
                 continue
     return result

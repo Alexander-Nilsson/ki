@@ -27,12 +27,6 @@ def _decode_tags(tags_str: Optional[str]) -> List[str]:
     return tags_str.split("::")
 
 
-class NoteField:
-    def __init__(self, name: str, content: str):
-        self.name = name
-        self.content = content
-
-
 class Note:
     def __init__(
         self,
@@ -116,15 +110,6 @@ def parse_notes_file(path: Path) -> List[Note]:
         if note:
             notes.append(note)
     return notes
-
-
-def serialize_notes(notes: List[Note]) -> str:
-    return "\n".join(n.serialize() for n in notes) + "\n"
-
-
-def write_notes_file(path: Path, notes: List[Note]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(serialize_notes(notes), encoding="utf-8")
 
 
 def write_note_file(deck_dir: Path, note: Note, content: Optional[str] = None) -> Path:

@@ -223,9 +223,9 @@ class ConflictResolutionDialog(QDialog):
         menu = QMenu(self)
         anki_action = menu.addAction("Keep Anki Version")
         git_action = menu.addAction("Keep Git Version")
-        chosen =         widget = self._table.cellWidget(row, 2)
+        widget = self._table.cellWidget(row, 2)
         assert isinstance(widget, QPushButton)
-        menu.exec(
+        chosen = menu.exec(
             widget.mapToGlobal(
                 widget.rect().center()
             )

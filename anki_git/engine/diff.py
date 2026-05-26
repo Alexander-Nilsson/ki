@@ -1,9 +1,12 @@
 """Diff engine: compute field-level diffs between note/notetype states."""
 
 import difflib
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
+
+_logger = logging.getLogger("anki_git")
 
 from anki_git.formats.notes_md import Note, parse_notes_file
 from anki_git.formats.notetype_yaml import Notetype
@@ -363,6 +366,7 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
         try:
             note_obj = col.get_note(nid)
         except Exception:
+            _logger.warning("Failed to get note %d in export diff", nid, exc_info=True)
             continue
         nt_name = note_obj.note_type()["name"]
         try:
@@ -371,6 +375,7 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
                 continue
             deck_name = col.decks.name(cards[0].did)
         except Exception:
+            _logger.warning("Failed to get deck for note %d in export diff", nid, exc_info=True)
             continue
         fields = dict(note_obj.items())
         new_note = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=fields)
@@ -424,6 +429,7 @@ def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callab
         try:
             note_obj = col.get_note(nid)
         except Exception:
+            _logger.warning("Failed to get note %d in import diff", nid, exc_info=True)
             continue
         nt_name = note_obj.note_type()["name"]
         try:
@@ -432,6 +438,7 @@ def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callab
                 continue
             deck_name = col.decks.name(cards[0].did)
         except Exception:
+            _logger.warning("Failed to get deck for note %d in import diff", nid, exc_info=True)
             continue
         col_notes_by_id[nid] = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=dict(note_obj.items()))
 

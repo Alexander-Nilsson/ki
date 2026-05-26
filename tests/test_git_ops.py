@@ -6,7 +6,6 @@ from anki_git.engine.git_ops import (
     open_repo,
     get_or_init_repo,
     stage_all,
-    commit,
     create_snapshot_commit,
     is_dirty,
     get_commit_count,
@@ -47,7 +46,7 @@ def test_stage_and_commit(tmp_path):
     f = tmp_path / "test.txt"
     f.write_text("hello", encoding="utf-8")
     stage_all(repo)
-    commit(repo, "Initial commit")
+    repo.index.commit("Initial commit")
     assert not is_dirty(repo)
     assert get_commit_count(repo) == 1
 
@@ -69,11 +68,11 @@ def test_commit_count_after_commits(tmp_path):
     f = tmp_path / "f.txt"
     f.write_text("v1", encoding="utf-8")
     stage_all(repo)
-    commit(repo, "c1")
+    repo.index.commit("c1")
     assert get_commit_count(repo) == 1
     f.write_text("v2", encoding="utf-8")
     stage_all(repo)
-    commit(repo, "c2")
+    repo.index.commit("c2")
     assert get_commit_count(repo) == 2
 
 

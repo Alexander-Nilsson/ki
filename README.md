@@ -13,7 +13,8 @@ Built on the foundation of [ki](https://github.com/langfield/ki) — reimagined 
 - **Conflict resolution** — three-way merge detection with a Qt dialog and auto-resolve modes
 - **Notetype tracking** — clean YAML export with CSS separated into its own file
 - **Progress feedback** — animated progress bar with step-by-step status during operations
-- **Auto-sync** — debounced auto-export on note changes, snapshot on profile close
+- **Auto-sync on startup** — automatically check for repo changes when Anki opens
+- **Auto-snapshot on close** — snapshot changes when Anki closes
 - **Background mode** — silent operation without dialogs for automated workflows
 - **Remote push** — auto-push to GitHub/GitLab after snapshot
 - **Diff preview** — git-style diff viewer before export/import
@@ -24,21 +25,25 @@ Built on the foundation of [ki](https://github.com/langfield/ki) — reimagined 
 anki_git/
 ├── __init__.py          # Anki hook registration only
 ├── addon.py             # Qt UI: menus, dialogs, settings
+├── config.py            # Config schema + defaults
 ├── engine/
 │   ├── exporter.py      # Anki → files (read-only)
 │   ├── importer.py      # files → Anki (write)
+│   ├── sync.py          # Two-way sync engine
 │   ├── git_ops.py       # GitPython operations
 │   ├── conflict.py      # Three-way merge logic
-│   └── checksums.py     # Content hashing
+│   ├── checksums.py     # Content hashing
+│   ├── export_helpers.py# Shared export helpers
+│   └── import_helpers.py# Shared import helpers
 ├── formats/
 │   ├── notes_md.py      # Markdown parse/serialize
 │   ├── notetype_yaml.py # YAML parse/serialize
 │   └── media.py         # Media handling strategies
-├── ui/
-│   ├── settings.py      # Settings dialog
-│   ├── conflicts.py     # Conflict resolution dialog
-│   └── progress.py      # Progress bar widget
-└── config.py            # Config schema + defaults
+└── ui/
+    ├── settings.py      # Settings dialog
+    ├── conflicts.py     # Conflict resolution dialog
+    ├── diff.py          # Diff preview dialog
+    └── utils.py         # Shared UI utilities
 ```
 
 ## Installation

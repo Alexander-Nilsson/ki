@@ -69,6 +69,7 @@ def load_config() -> KiSyncConfig:
         raw = aqt.mw.addonManager.getConfig(__name__.split(".")[0])
         _config = KiSyncConfig.from_dict(raw) if raw else KiSyncConfig()
     except Exception:
+        _logger.exception("Failed to load config, using defaults")
         _config = KiSyncConfig()
     return _config
 
@@ -392,14 +393,6 @@ def show_menu() -> None:
 
 
 _menu_shown = False
-_last_sync_status: str = ""
-
-
-def _get_last_sync_status() -> str:
-    """Return a human-readable string about the last sync result."""
-    return _last_sync_status
-
-
 
 
 def _run_background_export(config: KiSyncConfig, quick: bool = False) -> None:
@@ -437,7 +430,7 @@ def _try_fetch(remote) -> None:
     try:
         remote.fetch()
     except Exception:
-        pass
+        _logger.warning("Remote fetch failed", exc_info=True)
 
 
 def _fetch_remote_background(repo_path: Path) -> None:
@@ -604,7 +597,7 @@ def on_profile_open() -> None:
                     )
                     return
             except Exception:
-                pass
+                _logger.warning("quick_has_changes failed on startup", exc_info=True)
         _run_startup_import(config)
 
 
@@ -625,7 +618,7 @@ def on_profile_close() -> None:
                 _logger.info("No changes detected, skipping auto-export")
                 return
         except Exception:
-            pass
+            _logger.warning("quick_has_changes failed on close", exc_info=True)
 
         remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
 

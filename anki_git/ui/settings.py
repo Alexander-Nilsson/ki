@@ -116,15 +116,10 @@ class SettingsDialog(QDialog):
 
     def _load_status(self):
         """Read sync status from the global status string and meta.json."""
-        from anki_git.addon import _get_last_sync_status
         import datetime
         from pathlib import Path
 
         repo_path_str = self._repo_path_input.text().strip()
-        status_text = _get_last_sync_status()
-        if status_text:
-            self._status_value.setText(status_text)
-            return
         if not repo_path_str:
             self._status_value.setText("No repo configured")
             return

@@ -6,7 +6,6 @@ from anki_git.formats.notes_md import (
     Note,
     parse_note_section,
     parse_notes_file,
-    write_notes_file,
 )
 
 
@@ -96,19 +95,21 @@ def test_serialize_preserves_cloze():
 
 
 def test_write_and_read_notes_file():
+    from anki_git.formats.notes_md import write_note_file
     notes = [
         Note(nid=1, notetype="Basic", tags=["a"], deck="Default", fields={"Front": "Q1", "Back": "A1"}),
         Note(nid=2, notetype="Basic", tags=["b"], deck="Default", fields={"Front": "Q2", "Back": "A2"}),
     ]
     with tempfile.TemporaryDirectory() as tmpdir:
-        path = Path(tmpdir) / "notes.md"
-        write_notes_file(path, notes)
-        assert path.exists()
-
-        parsed = parse_notes_file(path)
+        dir_ = Path(tmpdir) / "decks" / "Default"
+        for n in notes:
+            write_note_file(dir_, n)
+        files = sorted(dir_.iterdir())
+        assert len(files) == 2
+        parsed = parse_notes_file(files[0]) + parse_notes_file(files[1])
         assert len(parsed) == 2
-        assert parsed[0].nid == 1
-        assert parsed[1].nid == 2
+        parsed_ids = sorted(n.nid for n in parsed)
+        assert parsed_ids == [1, 2]
 
 
 def test_parse_empty_file():
