@@ -122,40 +122,6 @@ def ensure_gitignore(repo_root: Path) -> None:
         gitignore.write_text(".ki/backups\n", encoding="utf-8")
 
 
-def get_commit_log(repo: Repo, max_count: int = 50) -> list[dict]:
-    """Return list of {hexsha, message, author, timestamp, files_changed}."""
-    commits = []
-    try:
-        for i, c in enumerate(repo.iter_commits()):
-            if i >= max_count:
-                break
-            try:
-                files = sorted(
-                    {p for d in c.parents[0].diff(c) if (p := d.b_path or d.a_path)}
-                ) if c.parents else []
-            except Exception:
-                files = []
-            commits.append({
-                "hexsha": c.hexsha[:12],
-                "message": c.message.strip(),
-                "author": str(c.author),
-                "timestamp": int(c.committed_date),
-                "files_changed": files,
-            })
-    except Exception:
-        _logger.exception("Failed to read commit log")
-    return commits
-
-
-def get_commit_diff(repo: Repo, commit_hash: str) -> str:
-    """Return unified diff for a single commit as a string."""
-    try:
-        return repo.git.show(commit_hash, format="", stat=True, patch=True)
-    except Exception:
-        _logger.exception("Failed to get commit diff for %s", commit_hash)
-        return ""
-
-
 def get_existing_remote_url(repo: Repo) -> str:
     """Return the URL of the 'origin' remote if it exists."""
     try:

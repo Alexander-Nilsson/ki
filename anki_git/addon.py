@@ -350,31 +350,6 @@ def import_action() -> None:
     ).run_in_background()
 
 
-def history_action() -> None:
-    from aqt import mw
-    from aqt.qt import QMessageBox
-    from anki_git.ui import HistoryDialog
-
-    config = load_config()
-    if not config.repo_path:
-        QMessageBox.warning(
-            mw, "AnkiGit",
-            "Please set a repository path in "
-            "Tools > AnkiGit > Settings first."
-        )
-        return
-    repo_path = Path(config.repo_path)
-    if not (repo_path / ".git").exists():
-        QMessageBox.warning(
-            mw, "AnkiGit",
-            "No Git repository found. Take a snapshot first."
-        )
-        return
-
-    dialog = HistoryDialog(repo_path, mw)
-    dialog.exec()
-
-
 def settings_action() -> None:
     from aqt import mw
     from anki_git.ui import SettingsDialog
@@ -407,12 +382,6 @@ def show_menu() -> None:
     import_act = QAction("Import from Repo", mw)
     import_act.triggered.connect(import_action)
     parent_menu.addAction(import_act)
-
-    parent_menu.addSeparator()
-
-    history_act = QAction("View History", mw)
-    history_act.triggered.connect(history_action)
-    parent_menu.addAction(history_act)
 
     settings_act = QAction("Settings...", mw)
     settings_act.triggered.connect(settings_action)
