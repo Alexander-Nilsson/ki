@@ -114,6 +114,76 @@ def test_quick_has_changes_sha_differs(tmp_path):
     assert result is True
 
 
+def test_quick_repo_has_changes_no_baseline(tmp_path):
+    """Returns None when no meta baseline exists."""
+    from anki_git.engine.checksums import quick_repo_has_changes
+    result = quick_repo_has_changes(tmp_path)
+    assert result is None
+
+
+def test_quick_repo_has_changes_no_repo(tmp_path):
+    """Returns True when repo path has no valid git repo."""
+    from anki_git.engine.checksums import quick_repo_has_changes, save_meta
+
+    save_meta(tmp_path, {"last_commit_sha": "abc123"})
+    result = quick_repo_has_changes(tmp_path)
+    assert result is True
+
+
+def test_quick_repo_has_changes_sha_matches(tmp_path):
+    """Returns False when HEAD SHA matches stored SHA and repo is clean."""
+    from anki_git.engine.checksums import quick_repo_has_changes, save_meta
+    from anki_git.engine.git_ops import init_repo
+
+    repo = init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text(".ki/\n", encoding="utf-8")
+    repo.index.add([".gitignore"])
+    repo.index.commit("init")
+    sha = str(repo.head.commit)
+
+    save_meta(tmp_path, {"last_commit_sha": sha})
+
+    result = quick_repo_has_changes(tmp_path)
+    assert result is False
+
+
+def test_quick_repo_has_changes_sha_differs(tmp_path):
+    """Returns True when HEAD SHA differs from stored SHA."""
+    from anki_git.engine.checksums import quick_repo_has_changes, save_meta
+    from anki_git.engine.git_ops import init_repo, stage_all
+
+    repo = init_repo(tmp_path)
+    f = tmp_path / "dummy.txt"
+    f.write_text("content", encoding="utf-8")
+    stage_all(repo)
+    repo.index.commit("initial")
+
+    save_meta(tmp_path, {"last_commit_sha": "oldsha"})
+    result = quick_repo_has_changes(tmp_path)
+    assert result is True
+
+
+def test_quick_repo_has_changes_dirty(tmp_path):
+    """Returns True when repo has uncommitted changes."""
+    import json
+    from anki_git.engine.checksums import quick_repo_has_changes
+    from anki_git.engine.git_ops import init_repo
+
+    repo = init_repo(tmp_path)
+    (tmp_path / ".gitignore").write_text("", encoding="utf-8")
+    repo.index.add([".gitignore"])
+    repo.index.commit("init")
+    sha = str(repo.head.commit)
+
+    save_meta(tmp_path, {"last_commit_sha": sha})
+
+    # Make repo dirty
+    (tmp_path / "dirty.txt").write_text("dirty", encoding="utf-8")
+
+    result = quick_repo_has_changes(tmp_path)
+    assert result is True
+
+
 def test_save_and_load_meta(tmp_path):
     meta = {"last_export_time": 1700000000, "note_checksums": {"1": "abc"}}
     save_meta(tmp_path, meta)

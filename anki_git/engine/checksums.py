@@ -30,6 +30,32 @@ def save_meta(repo_root: Path, meta: dict) -> None:
     )
 
 
+def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
+    """Quick check if the repo has changes since last sync.
+
+    Only checks git state — no Anki collection access needed.
+    Returns False if definitely no repo changes, True if changes exist,
+    or None if there is no baseline yet (first run).
+    """
+    from anki_git.engine.git_ops import is_dirty, open_repo
+
+    meta = load_meta(repo_path)
+    last_sha = meta.get("last_commit_sha")
+
+    if last_sha is None:
+        return None
+
+    repo = open_repo(repo_path)
+    if repo is None:
+        return True
+    if is_dirty(repo):
+        return True
+    if str(repo.head.commit) != last_sha:
+        return True
+
+    return False
+
+
 def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     """Quick check if anything has changed since last sync/export.
 

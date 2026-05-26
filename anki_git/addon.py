@@ -452,7 +452,11 @@ def _fetch_remote_background(repo_path: Path) -> None:
 
 
 def _run_startup_import(config: KiSyncConfig) -> None:
-    """Show import diff on startup. Let user accept/reject repo changes."""
+    """Show import diff on startup. Let user accept/reject repo changes.
+
+    Runs entirely in background — first checks if the repo has any changes,
+    and only proceeds to full diff analysis if needed.
+    """
     from aqt import mw
     from aqt.qt import QMessageBox
     from aqt.operations import QueryOp
@@ -461,7 +465,19 @@ def _run_startup_import(config: KiSyncConfig) -> None:
 
     repo_path = Path(config.repo_path)
 
-    def do_diff(col):
+    def do_startup_check(col):
+        # Quick check: only repo-side changes matter for startup import
+        from anki_git.engine.checksums import quick_repo_has_changes
+        try:
+            has_changes = quick_repo_has_changes(repo_path)
+            if has_changes is False or has_changes is None:
+                _logger.info("No repo changes, skipping startup import")
+                return None
+        except Exception:
+            _logger.warning(
+                "quick_repo_has_changes failed on startup", exc_info=True
+            )
+
         _logger.info("Computing startup import diff...")
         report = compute_import_diff(
             col, repo_path,
@@ -479,8 +495,12 @@ def _run_startup_import(config: KiSyncConfig) -> None:
         ui_data = report_to_diff_data(report)
         return report, ui_data
 
-    def on_diff_done(result_tuple):
-        report, ui_data = result_tuple
+    def on_diff_done(result):
+        if result is None:
+            _logger.info("No repo changes to import on startup")
+            return
+
+        report, ui_data = result
         if not report or not report.has_changes:
             _logger.info("No repo changes to import on startup")
             return
@@ -568,7 +588,7 @@ def _run_startup_import(config: KiSyncConfig) -> None:
 
     QueryOp(
         parent=mw,
-        op=do_diff,
+        op=do_startup_check,
         success=on_diff_done,
     ).failure(on_diff_failed).with_progress(
         "Checking for changes..."
@@ -588,16 +608,6 @@ def on_profile_open() -> None:
             if not (repo_path / ".git").exists():
                 return
             _fetch_remote_background(repo_path)
-            from anki_git.engine.checksums import quick_has_changes
-            try:
-                result = quick_has_changes(mw.col, repo_path)
-                if result is False or result is None:
-                    _logger.info(
-                        "No changes or no baseline, skipping startup import"
-                    )
-                    return
-            except Exception:
-                _logger.warning("quick_has_changes failed on startup", exc_info=True)
         _run_startup_import(config)
 
 
