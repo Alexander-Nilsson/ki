@@ -4,7 +4,7 @@ import difflib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Set
 
 from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 
@@ -90,6 +90,21 @@ class DiffReport:
     @property
     def has_changes(self) -> bool:
         return self.total_changes > 0
+
+
+@dataclass
+class ImportDiffData:
+    """Combines a display DiffReport with raw parsed data for the import phase.
+
+    The raw data (anki_notes, repo_notes, checksums) is computed once during
+    the diff phase and passed to pull_from_repo() to avoid re-scanning.
+    """
+    report: DiffReport
+    anki_notes: Dict[int, Note] = field(default_factory=dict)
+    repo_notes: Dict[int, Note] = field(default_factory=dict)
+    repo_notetypes: Dict[str, Notetype] = field(default_factory=dict)
+    anki_checksums: Dict[str, str] = field(default_factory=dict)
+    git_checksums: Dict[str, str] = field(default_factory=dict)
 
 
 def _unified_diff(old: str, new: str, name: str) -> List[str]:
@@ -393,19 +408,31 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
     return report
 
 
-def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callable] = None) -> DiffReport:
-    """Compare repo state vs current Anki collection for import preview."""
+def compute_import_diff(col, repo_path: Path,
+                        progress_callback: Optional[Callable] = None,
+                        anki_notes: Optional[Dict[int, Note]] = None,
+                        repo_notes: Optional[Dict[int, Note]] = None,
+                        repo_notetypes: Optional[Dict[str, Notetype]] = None,
+                        anki_checksums: Optional[Dict[str, str]] = None,
+                        git_checksums: Optional[Dict[str, str]] = None) -> ImportDiffData:
+    """Compare repo state vs current Anki collection for import preview.
+
+    If anki_notes / repo_notes / repo_notetypes / checksums are provided,
+    skips the corresponding filesystem or DB scans and uses the pre-computed
+    data directly.  This enables the delta-import flow where the diff phase
+    feeds pre-scanned data into the import phase.
+    """
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
+    from anki_git.engine.checksums import content_hash
 
     report = DiffReport()
 
     if progress_callback:
         progress_callback("Reading notetypes...")
 
-    notetypes_dir = repo_path / NOTETYPES_DIR
-    decks_dir = repo_path / DECKS_DIR
-
-    repo_notetypes = _read_nt(notetypes_dir)
+    if repo_notetypes is None:
+        notetypes_dir = repo_path / NOTETYPES_DIR
+        repo_notetypes = _read_nt(notetypes_dir)
     col_notetypes: Dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
@@ -419,16 +446,169 @@ def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callab
         if diff:
             report.notetype_diffs.append(diff)
 
-    col_notes_by_id: Dict[int, Note] = {}
-    nids = col.db.list("SELECT id FROM notes WHERE id > 0")
-    total_col = len(nids)
-    for i, nid in enumerate(nids):
-        if progress_callback and i % 50 == 0:
-            progress_callback(f"Analyzing collection... {i}/{total_col}")
+    # Gather Anki notes (scan or use pre-computed)
+    if anki_notes is None:
+        anki_notes = {}
+        nids = col.db.list("SELECT id FROM notes WHERE id > 0")
+        total_col = len(nids)
+        for i, nid in enumerate(nids):
+            if progress_callback and i % 50 == 0:
+                progress_callback(f"Analyzing collection... {i}/{total_col}")
+            try:
+                note_obj = col.get_note(nid)
+            except Exception:
+                _logger.warning("Failed to get note %d in import diff", nid, exc_info=True)
+                continue
+            nt_name = note_obj.note_type()["name"]
+            try:
+                cards = note_obj.cards()
+                if not cards:
+                    continue
+                deck_name = col.decks.name(cards[0].did)
+            except Exception:
+                _logger.warning("Failed to get deck for note %d in import diff", nid, exc_info=True)
+                continue
+            anki_notes[nid] = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=dict(note_obj.items()))
+
+    # Gather repo notes (scan or use pre-computed)
+    if repo_notes is None:
+        repo_notes = {}
+        decks_dir = repo_path / DECKS_DIR
+        notes_files = sorted(decks_dir.rglob("*.md")) if decks_dir.exists() else []
+        total_files = len(notes_files)
+        for i, notes_file in enumerate(notes_files):
+            if progress_callback and i % 5 == 0:
+                progress_callback(f"Diffing repo files... {i}/{total_files}")
+            for rn in parse_notes_file(notes_file):
+                repo_notes[rn.nid] = rn
+
+    # Compute checksums if not already provided
+    if anki_checksums is None:
+        anki_checksums = {str(nid): content_hash(n.serialize()) for nid, n in anki_notes.items()}
+    if git_checksums is None:
+        git_checksums = {str(nid): content_hash(n.serialize()) for nid, n in repo_notes.items()}
+
+    # Diff each pair
+    seen_ids: Set[int] = set()
+    for nid, repo_note in repo_notes.items():
+        seen_ids.add(nid)
+        col_note = anki_notes.get(nid)
+        nd = compute_note_diff(col_note, repo_note)
+        if nd.change_type != "unchanged":
+            report.note_diffs.append(nd)
+
+    for nid, col_note in anki_notes.items():
+        if nid not in seen_ids:
+            nd = compute_note_diff(col_note, None)
+            report.note_diffs.append(nd)
+
+    return ImportDiffData(
+        report=report,
+        anki_notes=anki_notes,
+        repo_notes=repo_notes,
+        repo_notetypes=repo_notetypes,
+        anki_checksums=anki_checksums,
+        git_checksums=git_checksums,
+    )
+
+
+def _nid_from_deleted_path(path: Path) -> Optional[int]:
+    """Extract nid from a deleted decks/<deck>/<nid>.md path."""
+    if path.suffix != ".md":
+        return None
+    try:
+        return int(path.stem)
+    except ValueError:
+        return None
+
+
+def compute_import_diff_delta(col, repo_path: Path,
+                              progress_callback: Optional[Callable] = None) -> ImportDiffData:
+    """Delta-based import diff using git to find only changed files.
+
+    Uses git status/diff to identify only the files that have actually
+    changed in the repo.  Parses only those files and looks up only the
+    corresponding Anki notes — avoiding a full scan of every note and file.
+
+    Falls back to the full scan if no last_commit_sha baseline exists
+    (first run) or if there are too many changed files (heuristic).
+    """
+    from anki_git.engine.checksums import load_meta, content_hash
+    from anki_git.engine.git_ops import get_changed_repo_files
+
+    meta = load_meta(repo_path)
+    last_commit_sha = meta.get("last_commit_sha")
+    last_max_mod = meta.get("last_max_mod", 0)
+
+    # Fall back to full scan on first run (no baseline)
+    if not last_commit_sha:
+        _logger.info("No last_commit_sha baseline — falling back to full scan")
+        return compute_import_diff(col, repo_path, progress_callback=progress_callback)
+
+    changed, deleted = get_changed_repo_files(repo_path, last_commit_sha)
+
+    # If nothing changed in the repo, return an empty result
+    if not changed and not deleted:
+        _logger.info("No changed repo files detected")
+        return ImportDiffData(report=DiffReport())
+
+    _logger.info("Delta import: %d changed, %d deleted files", len(changed), len(deleted))
+
+    if progress_callback:
+        progress_callback(f"Reading {len(changed)} changed files...")
+
+    # Parse only changed repo files
+    repo_notes: Dict[int, Note] = {}
+    for p in sorted(changed):
+        if p.suffix != ".md" or not p.parts[:1] == ("decks",):
+            continue
+        file_path = repo_path / p
+        if file_path.exists():
+            for rn in parse_notes_file(file_path):
+                repo_notes[rn.nid] = rn
+
+    # Extract nids from deleted files
+    deleted_nids: Set[int] = set()
+    for p in deleted:
+        nid = _nid_from_deleted_path(p)
+        if nid is not None:
+            deleted_nids.add(nid)
+
+    # Also scan for notetypes that changed
+    changed_notetype_names: Set[str] = set()
+    for p in list(changed) + list(deleted):
+        if p.suffix in (".yaml", ".yml", ".css") and p.parts[:1] == ("notetypes",):
+            changed_notetype_names.add(p.stem)
+
+    # Read all notetypes if any changed (they're small anyway)
+    repo_notetypes: Dict[str, Notetype] = {}
+    if changed_notetype_names:
+        from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
+        repo_notetypes = _read_nt(repo_path / NOTETYPES_DIR)
+
+    # Build set of nids we need to look up in Anki
+    affected_nids: Set[int] = set(repo_notes.keys()) | deleted_nids
+
+    # Fetch only the affected Anki notes + any notes modified in Anki since
+    # last sync (they might have conflicts with unchanged repo files)
+    if progress_callback:
+        progress_callback(f"Checking {len(affected_nids)} affected notes...")
+
+    anki_notes: Dict[int, Note] = {}
+    db = col.db
+    assert db is not None
+
+    # Query affected nids individually — still much cheaper than scanning ALL
+    col_nid_set: Set[int] = set()
+    for row in db.list("SELECT id FROM notes WHERE id > 0"):
+        col_nid_set.add(row)
+
+    for nid in affected_nids:
+        if nid not in col_nid_set:
+            continue
         try:
             note_obj = col.get_note(nid)
         except Exception:
-            _logger.warning("Failed to get note %d in import diff", nid, exc_info=True)
             continue
         nt_name = note_obj.note_type()["name"]
         try:
@@ -437,26 +617,66 @@ def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callab
                 continue
             deck_name = col.decks.name(cards[0].did)
         except Exception:
-            _logger.warning("Failed to get deck for note %d in import diff", nid, exc_info=True)
             continue
-        col_notes_by_id[nid] = Note(nid=nid, notetype=nt_name, tags=list(note_obj.tags), deck=deck_name, fields=dict(note_obj.items()))
+        anki_notes[nid] = Note(
+            nid=nid, notetype=nt_name, tags=list(note_obj.tags),
+            deck=deck_name, fields=dict(note_obj.items()),
+        )
 
-    seen_ids = set()
-    notes_files = sorted(decks_dir.rglob("*.md")) if decks_dir.exists() else []
-    total_files = len(notes_files)
-    for i, notes_file in enumerate(notes_files):
-        if progress_callback and i % 5 == 0:
-            progress_callback(f"Diffing repo files... {i}/{total_files}")
-        for repo_note in parse_notes_file(notes_file):
-            seen_ids.add(repo_note.nid)
-            col_note = col_notes_by_id.get(repo_note.nid)
-            nd = compute_note_diff(col_note, repo_note)
-            if nd.change_type != "unchanged":
-                report.note_diffs.append(nd)
+    # Also fetch Anki notes that were modified since last sync and whose
+    # repo counterpart is unchanged (potential conflicts)
+    if progress_callback:
+        progress_callback("Checking recently modified notes...")
 
-    for nid, col_note in col_notes_by_id.items():
-        if nid not in seen_ids:
-            nd = compute_note_diff(col_note, None)
-            report.note_diffs.append(nd)
+    recently_modified_query = (
+        "SELECT id FROM notes WHERE mod > ? AND id > 0"
+    )
+    try:
+        for (nid,) in db.execute(recently_modified_query, last_max_mod):
+            if nid not in affected_nids and nid not in anki_notes:
+                try:
+                    note_obj = col.get_note(nid)
+                except Exception:
+                    continue
+                nt_name = note_obj.note_type()["name"]
+                try:
+                    cards = note_obj.cards()
+                    if not cards:
+                        continue
+                    deck_name = col.decks.name(cards[0].did)
+                except Exception:
+                    continue
+                anki_notes[nid] = Note(
+                    nid=nid, notetype=nt_name, tags=list(note_obj.tags),
+                    deck=deck_name, fields=dict(note_obj.items()),
+                )
+    except Exception:
+        _logger.warning("Failed to fetch recently modified notes", exc_info=True)
 
-    return report
+    # Build partial checksums, filling in from base for unchanged notes
+    base_checksums = meta.get("note_checksums", {})
+    partial_anki: Dict[str, str] = {
+        str(nid): content_hash(n.serialize()) for nid, n in anki_notes.items()
+    }
+    partial_git: Dict[str, str] = {
+        str(nid): content_hash(n.serialize()) for nid, n in repo_notes.items()
+    }
+
+    # Merge with base so conflict detection sees the full picture
+    merged_anki = dict(base_checksums)
+    merged_anki.update(partial_anki)
+    merged_git = dict(base_checksums)
+    merged_git.update(partial_git)
+
+    if progress_callback:
+        progress_callback("Building diff preview...")
+
+    return compute_import_diff(
+        col, repo_path,
+        progress_callback=progress_callback,
+        anki_notes=anki_notes,
+        repo_notes=repo_notes,
+        repo_notetypes=repo_notetypes or None,
+        anki_checksums=merged_anki,
+        git_checksums=merged_git,
+    )

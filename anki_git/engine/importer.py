@@ -13,7 +13,11 @@ Matching strategy:
 
 import logging
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from anki_git.formats.notes_md import Note
+    from anki_git.formats.notetype_yaml import Notetype
 from dataclasses import dataclass, field
 
 from anki_git.engine import import_helpers
@@ -41,8 +45,9 @@ def preview_import(repo_path: Path, col=None) -> ImportResult:
     Otherwise falls back to simple file counting.
     """
     if col is not None:
-        from anki_git.engine.diff import compute_import_diff
-        report = compute_import_diff(col, repo_path)
+        from anki_git.engine.diff import compute_import_diff_delta
+        data = compute_import_diff_delta(col, repo_path)
+        report = data.report
         created = sum(1 for d in report.note_diffs if d.change_type == "added")
         modified = sum(1 for d in report.note_diffs if d.change_type == "modified")
         deleted = sum(1 for d in report.note_diffs if d.change_type == "deleted")
@@ -80,7 +85,11 @@ def preview_import(repo_path: Path, col=None) -> ImportResult:
 
 
 def pull_from_repo(col, repo_path: Path, conflict_callback=None,
-                   sync_mode: str = "accept_all") -> ImportResult:
+                   sync_mode: str = "accept_all",
+                   anki_checksums: Optional[Dict[str, str]] = None,
+                   git_checksums: Optional[Dict[str, str]] = None,
+                   git_notes_lookup: Optional[Dict[int, "Note"]] = None,
+                   repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> ImportResult:
     """Import repo state into Anki with conflict detection and optional resolution.
 
     Steps:
@@ -90,15 +99,26 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
     4. Apply only git-winning changes to Anki
     5. Delete from Anki notes that were deleted in repo (if resolution says so)
     6. Delete from repo notes that were deleted in Anki (if resolution says so)
-    7. Save updated checksums to meta.json
+    7. Persist tracking metadata (last_note_count, last_max_mod, last_commit_sha)
+       to prevent unnecessary re-export on close
+    8. Create verification commit recording the import
 
     conflict_callback receives a ConflictReport and must return a resolved ConflictReport.
+
+    If anki_checksums / git_checksums / git_notes_lookup / repo_notetypes
+    are provided, skips the corresponding filesystem scans.
     """
     from anki_git.engine.conflict import process_conflicts, ConflictType
     from anki_git.engine.checksums import load_meta, save_meta
 
-    anki_checksums = import_helpers.compute_anki_checksums(col)
-    git_checksums, git_notes_lookup = import_helpers.compute_git_checksums(repo_path)
+    if anki_checksums is None:
+        anki_checksums = import_helpers.compute_anki_checksums(col)
+    if git_checksums is None and git_notes_lookup is None:
+        git_checksums, git_notes_lookup = import_helpers.compute_git_checksums(repo_path)
+
+    assert anki_checksums is not None
+    assert git_checksums is not None and git_notes_lookup is not None
+
     meta = load_meta(repo_path)
     base_checksums = meta.get("note_checksums", {})
 
@@ -126,7 +146,9 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
         if c.conflict_type == ConflictType.DELETE_FROM_GIT:
             delete_from_git_nids.add(c.nid)
 
-    result = import_from_repo(col, repo_path, nid_filter=resolved_nids)
+    result = import_from_repo(col, repo_path, nid_filter=resolved_nids,
+                              notes_lookup=git_notes_lookup,
+                              repo_notetypes=repo_notetypes)
     result.conflict_report = report
 
     for nid in delete_from_anki_nids:
@@ -137,9 +159,29 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
         if import_helpers.delete_note_from_repo(repo_path, nid):
             result.notes_deleted_from_git += 1
 
+    assert col.db is not None
+    meta["last_note_count"] = col.db.scalar(
+        "SELECT COUNT(*) FROM notes WHERE id > 0"
+    ) or 0
+    meta["last_max_mod"] = col.db.scalar(
+        "SELECT MAX(mod) FROM notes WHERE id > 0"
+    ) or 0
+
     from anki_git.engine.git_ops import open_repo
     repo = open_repo(repo_path)
     meta["note_checksums"] = git_checksums
+
+    total_imported = result.notes_updated + result.notes_created
+    total_notetypes = result.notetypes_updated + result.notetypes_created
+    if repo and (total_imported > 0 or total_notetypes > 0):
+        parts = []
+        if total_imported:
+            parts.append(f"{total_imported} notes")
+        if total_notetypes:
+            parts.append(f"{total_notetypes} notetypes")
+        msg = f"Import {', '.join(parts)} from repo"
+        repo.git.commit("--allow-empty", "-m", msg)
+
     if repo:
         try:
             meta["last_commit_sha"] = repo.head.commit.hexsha
@@ -151,19 +193,24 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
 
 
 def import_from_repo(col, repo_path: Path,
-                     nid_filter: Optional[Set[int]] = None) -> ImportResult:
+                     nid_filter: Optional[Set[int]] = None,
+                     notes_lookup: Optional[Dict[int, "Note"]] = None,
+                     repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> ImportResult:
     """Apply repo state to an Anki collection.
 
     Must be called on Anki's main thread.
     If nid_filter is provided, only import notes whose nid is in the set.
+    If notes_lookup / repo_notetypes are provided, skips filesystem scans.
     """
     result = ImportResult()
 
     try:
         col.db.execute("begin")
-        import_helpers.import_notetypes(col, repo_path, result)
+        import_helpers.import_notetypes(col, repo_path, result,
+                                        repo_notetypes=repo_notetypes)
         import_helpers.import_notes(col, repo_path, result,
-                                    nid_filter=nid_filter)
+                                    nid_filter=nid_filter,
+                                    notes_lookup=notes_lookup)
         col.db.execute("commit")
         _logger.info("Import complete: %d notes, %d notetypes",
                      result.notes_updated + result.notes_created,

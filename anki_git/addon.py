@@ -215,7 +215,7 @@ def import_action() -> None:
     from aqt.qt import QMessageBox
     from anki_git.ui import ConflictResolutionDialog, DiffDialog
     from anki_git.engine.importer import pull_from_repo
-    from anki_git.engine.diff import compute_import_diff
+    from anki_git.engine.diff import compute_import_diff_delta
 
     config = load_config()
     from aqt import mw
@@ -241,25 +241,25 @@ def import_action() -> None:
         return
 
     def get_diff_with_progress(col):
-        report = compute_import_diff(
+        data = compute_import_diff_delta(
             col, repo_path,
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             )
         )
-        if not report.has_changes:
-            return report, None
+        if not data.report.has_changes:
+            return data, None
 
         mw.taskman.run_on_main(
             lambda: mw.progress.update(label="Preparing preview...")
         )
         from anki_git.ui.diff import report_to_diff_data
-        ui_data = report_to_diff_data(report)
-        return report, ui_data
+        ui_data = report_to_diff_data(data.report)
+        return data, ui_data
 
     def on_diff_done(result_tuple):
-        report, ui_data = result_tuple
-        if not report or not report.has_changes:
+        data, ui_data = result_tuple
+        if not data or not data.report.has_changes:
             QMessageBox.information(
                 mw, "AnkiGit",
                 "No changes detected. Nothing to import."
@@ -291,13 +291,17 @@ def import_action() -> None:
                 col, repo_path,
                 sync_mode=config.sync_mode,
                 conflict_callback=handle_conflicts_bg,
+                anki_checksums=data.anki_checksums,
+                git_checksums=data.git_checksums,
+                git_notes_lookup=data.repo_notes,
+                repo_notetypes=data.repo_notetypes,
             )
 
         def on_import_done(result):
-            if result.error:
-                _logger.error("Import failed: %s", result.error)
+            if result.errors:
+                _logger.error("Import failed: %s", result.errors)
                 QMessageBox.critical(
-                    mw, "AnkiGit", f"Import failed: {result.error}"
+                    mw, "AnkiGit", f"Import failed: {result.errors[0]}"
                 )
                 return
 
@@ -414,7 +418,7 @@ def _run_startup_import(config: KiSyncConfig) -> None:
     from aqt import mw
     from aqt.qt import QMessageBox
     from anki_git.ui import DiffDialog
-    from anki_git.engine.diff import compute_import_diff
+    from anki_git.engine.diff import compute_import_diff_delta
     from anki_git.engine.checksums import quick_repo_has_changes
 
     repo_path = Path(config.repo_path)
@@ -432,32 +436,32 @@ def _run_startup_import(config: KiSyncConfig) -> None:
         )
         return
 
-    # Changes detected — proceed with full diff inside a QueryOp (shows progress)
+    # Changes detected — proceed with delta diff inside a QueryOp (shows progress)
     def do_startup_check(col):
         _logger.info("Computing startup import diff...")
-        report = compute_import_diff(
+        data = compute_import_diff_delta(
             col, repo_path,
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             ),
         )
-        if not report.has_changes:
-            return report, None
+        if not data.report.has_changes:
+            return data, None
 
         mw.taskman.run_on_main(
             lambda: mw.progress.update(label="Preparing preview...")
         )
         from anki_git.ui.diff import report_to_diff_data
-        ui_data = report_to_diff_data(report)
-        return report, ui_data
+        ui_data = report_to_diff_data(data.report)
+        return data, ui_data
 
     def on_diff_done(result):
         if result is None:
             _logger.info("No repo changes to import on startup")
             return
 
-        report, ui_data = result
-        if not report or not report.has_changes:
+        data, ui_data = result
+        if not data or not data.report.has_changes:
             _logger.info("No repo changes to import on startup")
             return
 
@@ -481,14 +485,18 @@ def _run_startup_import(config: KiSyncConfig) -> None:
             result = pull_from_repo(
                 col, repo_path,
                 sync_mode=config.sync_mode,
+                anki_checksums=data.anki_checksums,
+                git_checksums=data.git_checksums,
+                git_notes_lookup=data.repo_notes,
+                repo_notetypes=data.repo_notetypes,
             )
 
             return result
 
         def on_import_done(result):
-            if result.error:
+            if result.errors:
                 QMessageBox.critical(
-                    mw, "AnkiGit", f"Import failed: {result.error}"
+                    mw, "AnkiGit", f"Import failed: {result.errors[0]}"
                 )
                 return
 

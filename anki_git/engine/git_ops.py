@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Set, Tuple
 
 from git import Repo, GitCommandError, InvalidGitRepositoryError
 
@@ -122,3 +122,67 @@ def get_existing_remote_url(repo: Repo) -> str:
     except (ValueError, Exception):
         _logger.debug("No remote 'origin' configured")
         return ""
+
+
+_CHANGED_PREFIXES = ("decks/", "notetypes/")
+
+def _is_content_path(path: str) -> bool:
+    return path.startswith(_CHANGED_PREFIXES)
+
+
+def get_changed_repo_files(repo_path: Path, last_commit_sha: Optional[str] = None) -> Tuple[Set[Path], Set[Path]]:
+    """Find changed and deleted repo files since the last import.
+
+    Uses git status (for uncommitted changes: staged, unstaged, untracked)
+    and git diff (for committed changes since last_commit_sha).
+
+    Returns (changed_files, deleted_files) — sets of Paths relative to repo root,
+    filtered to 'decks/' and 'notetypes/' content directories.
+    """
+    repo = Repo(repo_path)
+    changed: Set[Path] = set()
+    deleted: Set[Path] = set()
+
+    # Committed changes since last import
+    if last_commit_sha:
+        try:
+            for line in repo.git.diff("--name-status", last_commit_sha, "HEAD").splitlines():
+                parts = line.split("\t", 1)
+                if len(parts) < 2:
+                    continue
+                status, path = parts[0][0], parts[1]
+                if not _is_content_path(path):
+                    continue
+                if status == "D":
+                    deleted.add(Path(path))
+                else:
+                    changed.add(Path(path))
+        except Exception:
+            _logger.warning("git diff against last_commit_sha failed", exc_info=True)
+
+    # Uncommitted changes: staged, unstaged, untracked
+    try:
+        for line in repo.git.status("--porcelain").splitlines():
+            if not line.strip():
+                continue
+            index_status = line[0]
+            wt_status = line[1]
+            path = line[3:]
+
+            if not _is_content_path(path):
+                continue
+
+            if index_status == "?" and wt_status == "?":
+                changed.add(Path(path))
+                continue
+
+            actual_status = index_status if index_status != " " else wt_status
+            if actual_status == "D":
+                deleted.add(Path(path))
+            elif actual_status in ("M", "A", "R"):
+                if path not in {str(p) for p in deleted}:
+                    changed.add(Path(path))
+    except Exception:
+        _logger.warning("git status --porcelain failed", exc_info=True)
+
+    return changed, deleted

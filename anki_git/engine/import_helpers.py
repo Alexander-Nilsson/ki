@@ -16,6 +16,7 @@ from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
+    from anki_git.formats.notetype_yaml import Notetype
 
 _logger = logging.getLogger("anki_git")
 
@@ -189,81 +190,127 @@ def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
     return True
 
 
-def import_notetypes(col: Collection, repo_path: Path, result) -> None:
-    """Import all notetypes from repo into Anki, updating result in-place."""
-    for name in _repo_notetype_names(repo_path):
-        exists = col.models.by_name(name) is not None
-        if import_notetype(col, repo_path, name):
-            if exists:
-                result.notetypes_updated += 1
-            else:
-                result.notetypes_created += 1
+def import_notetypes(col: Collection, repo_path: Path, result,
+                     repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> None:
+    """Import all notetypes from repo into Anki, updating result in-place.
 
+    Only counts a notetype as updated if its content actually differs from
+    the collection's current version (compares fields, templates, and CSS).
+    If repo_notetypes is provided, skips the filesystem scan.
+    """
+    from anki_git.formats.notetype_yaml import read_all_notetypes, Notetype
 
-def _repo_notetype_names(repo_path: Path) -> list[str]:
-    from anki_git.formats.notetype_yaml import read_all_notetypes
-    return sorted(read_all_notetypes(repo_path / NOTETYPES_DIR).keys())
+    if repo_notetypes is None:
+        notetypes_dir = repo_path / NOTETYPES_DIR
+        repo_notetypes = read_all_notetypes(notetypes_dir)
+
+    for name in sorted(repo_notetypes.keys()):
+        repo_nt = repo_notetypes[name]
+        existing_dict = col.models.by_name(name)
+
+        if existing_dict:
+            existing_nt = Notetype.from_anki_dict(existing_dict)
+            if existing_nt == repo_nt:
+                continue
+
+        if existing_dict:
+            existing_dict["flds"] = [
+                {"name": f.name, "ord": f.ord, "font": f.font,
+                 "size": f.size, "sticky": f.sticky, "rtl": f.rtl}
+                for f in repo_nt.fields
+            ]
+            existing_dict["tmpls"] = [
+                {"name": t.name, "ord": t.ord, "qfmt": t.qfmt,
+                 "afmt": t.afmt, "bqfmt": t.bqfmt, "bafmt": t.bafmt}
+                for t in repo_nt.templates
+            ]
+            existing_dict["css"] = repo_nt.css
+            col.models.save(existing_dict)
+            result.notetypes_updated += 1
+        else:
+            new_nt = col.models.new(name)
+            for f in repo_nt.fields:
+                field = col.models.new_field(f.name)
+                field["rtl"] = f.rtl
+                col.models.add_field(new_nt, field)
+            for t in repo_nt.templates:
+                tmpl = col.models.new_template(t.name)
+                tmpl["qfmt"] = t.qfmt
+                tmpl["afmt"] = t.afmt
+                tmpl["bqfmt"] = t.bqfmt
+                tmpl["bafmt"] = t.bafmt
+                col.models.add_template(new_nt, tmpl)
+            new_nt["css"] = repo_nt.css
+            col.models.add_dict(new_nt)
+            result.notetypes_created += 1
 
 
 def import_notes(col: Collection, repo_path: Path, result,
-                 nid_filter: Optional[Set[int]] = None) -> None:
+                 nid_filter: Optional[Set[int]] = None,
+                 notes_lookup: Optional[Dict[int, "Note"]] = None) -> None:
     """Import notes from repo into Anki.
 
     If nid_filter is provided, only import notes whose nid is in the set.
+    If notes_lookup is provided, uses it instead of scanning the filesystem.
     Updates result in-place with notes_updated/notes_created/errors/warnings.
     """
-    from anki_git.formats.notes_md import parse_notes_file
+    from anki_git.formats.notes_md import parse_notes_file, Note
 
-    decks_dir = repo_path / DECKS_DIR
-    for notes_file in sorted(decks_dir.rglob("*.md")):
-        notes = parse_notes_file(notes_file)
-        for note_data in notes:
-            if nid_filter is not None and note_data.nid not in nid_filter:
+    if notes_lookup is not None:
+        note_iter: list[Note] = list(notes_lookup.values())
+    else:
+        decks_dir = repo_path / DECKS_DIR
+        note_iter = []
+        for notes_file in sorted(decks_dir.rglob("*.md")):
+            note_iter.extend(parse_notes_file(notes_file))
+
+    for note_data in note_iter:
+        if nid_filter is not None and note_data.nid not in nid_filter:
+            continue
+
+        try:
+            existing = col.get_note(NoteId(note_data.nid))
+        except Exception:
+            _logger.debug("Note %d not found in Anki during batch import", note_data.nid)
+            existing = None
+
+        if existing is not None:
+            for key, value in note_data.fields.items():
+                if key in existing:
+                    existing[key] = value
+            existing.tags = note_data.tags
+            col.update_note(existing)
+            result.notes_updated += 1
+        else:
+            model_id = col.models.id_for_name(note_data.notetype)
+            if model_id is None:
+                _logger.warning(
+                    "Notetype '%s' not found for nid %d",
+                    note_data.notetype, note_data.nid,
+                )
+                result.warnings.append(
+                    f"Notetype '{note_data.notetype}' not found "
+                    f"for nid {note_data.nid}"
+                )
                 continue
-
+            new_note = col.new_note(model_id)  # pyright: ignore[reportArgumentType]
+            for key, value in note_data.fields.items():
+                if key in new_note:
+                    new_note[key] = value
+            new_note.tags = note_data.tags
             try:
-                existing = col.get_note(NoteId(note_data.nid))
-            except Exception:
-                _logger.debug("Note %d not found in Anki during batch import", note_data.nid)
-                existing = None
-
-            if existing is not None:
-                for key, value in note_data.fields.items():
-                    if key in existing:
-                        existing[key] = value
-                existing.tags = note_data.tags
-                col.update_note(existing)
-                result.notes_updated += 1
-            else:
-                model_id = col.models.id_for_name(note_data.notetype)
-                if model_id is None:
-                    _logger.warning(
-                        "Notetype '%s' not found for nid %d",
-                        note_data.notetype, note_data.nid,
-                    )
-                    result.warnings.append(
-                        f"Notetype '{note_data.notetype}' not found "
-                        f"for nid {note_data.nid}"
-                    )
-                    continue
-                new_note = col.new_note(model_id)  # pyright: ignore[reportArgumentType]
-                for key, value in note_data.fields.items():
-                    if key in new_note:
-                        new_note[key] = value
-                new_note.tags = note_data.tags
-                try:
-                    deck_id = col.decks.id(note_data.deck)
-                    if deck_id is not None:
-                        col.add_note(new_note, deck_id)
-                        result.notes_created += 1
-                    else:
-                        result.errors.append(
-                            f"Deck '{note_data.deck}' not found"
-                        )
-                except Exception as e:
+                deck_id = col.decks.id(note_data.deck)
+                if deck_id is not None:
+                    col.add_note(new_note, deck_id)
+                    result.notes_created += 1
+                else:
                     result.errors.append(
-                        f"Failed to create note: {e}"
+                        f"Deck '{note_data.deck}' not found"
                     )
+            except Exception as e:
+                result.errors.append(
+                    f"Failed to create note: {e}"
+                )
 
 
 def cleanup_stale_repo_notes(col: Collection, repo_path: Path,

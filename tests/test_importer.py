@@ -252,3 +252,33 @@ def test_import_from_repo_malformed(tmp_path, anki_session):
     assert result.notes_created == 2
     assert len(result.errors) == 0
     assert len(result.warnings) == 0  # notetype Basic is present
+
+
+def test_import_result_no_error_attr():
+    """Regression: on_import_done callbacks use result.errors, not result.error.
+
+    ImportResult has .errors (plural, List[str]) — not .error (singular str).
+    Using result.error on ImportResult raises AttributeError.
+    """
+    r = ImportResult()
+    assert not hasattr(r, "error"), "ImportResult has .errors, not .error"
+    assert isinstance(r.errors, list)
+    assert r.errors == []
+
+
+@pytest.mark.integration
+def test_import_from_repo_with_error(tmp_path, anki_session):
+    """Error during import populates .errors (not .error)."""
+    col = anki_session.collection
+    repo = tmp_path / "repo"
+    (repo / "notetypes").mkdir(parents=True)
+    (repo / "decks" / "Default").mkdir(parents=True)
+
+    # Write a binary .md file that triggers UnicodeDecodeError during import
+    (repo / "decks" / "Default" / "1.md").write_bytes(b"\xff\xfe\x00\x01")
+
+    from anki_git.engine.importer import import_from_repo
+    result = import_from_repo(col, repo)
+
+    assert len(result.errors) > 0
+    assert isinstance(result.errors, list)
