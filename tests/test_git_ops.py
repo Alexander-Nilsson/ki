@@ -5,7 +5,6 @@ from anki_git.engine.git_ops import (
     init_repo,
     open_repo,
     get_or_init_repo,
-    stage_all,
     create_snapshot_commit,
     is_dirty,
     get_commit_count,
@@ -45,7 +44,7 @@ def test_stage_and_commit(tmp_path):
     repo = init_repo(tmp_path)
     f = tmp_path / "test.txt"
     f.write_text("hello", encoding="utf-8")
-    stage_all(repo)
+    repo.git.add(all=True)
     repo.index.commit("Initial commit")
     assert not is_dirty(repo)
     assert get_commit_count(repo) == 1
@@ -67,11 +66,11 @@ def test_commit_count_after_commits(tmp_path):
     repo = init_repo(tmp_path)
     f = tmp_path / "f.txt"
     f.write_text("v1", encoding="utf-8")
-    stage_all(repo)
+    repo.git.add(all=True)
     repo.index.commit("c1")
     assert get_commit_count(repo) == 1
     f.write_text("v2", encoding="utf-8")
-    stage_all(repo)
+    repo.git.add(all=True)
     repo.index.commit("c2")
     assert get_commit_count(repo) == 2
 
@@ -96,7 +95,7 @@ def test_create_snapshot_commit(tmp_path):
     repo = init_repo(tmp_path)
     f = tmp_path / "notes.md"
     f.write_text("content", encoding="utf-8")
-    stage_all(repo)
+    repo.git.add(all=True)
     create_snapshot_commit(repo, ["decks/Default/123.md", "notetypes/Basic.yaml"])
     assert get_commit_count(repo) == 1
     msg = repo.head.commit.message
@@ -108,7 +107,7 @@ def test_create_snapshot_commit_many_files(tmp_path):
     repo = init_repo(tmp_path)
     f = tmp_path / "notes.md"
     f.write_text("content", encoding="utf-8")
-    stage_all(repo)
+    repo.git.add(all=True)
     files = [f"decks/D/n{i}.md" for i in range(10)]
     create_snapshot_commit(repo, files)
     assert get_commit_count(repo) == 1

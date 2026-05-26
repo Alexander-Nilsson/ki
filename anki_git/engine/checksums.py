@@ -1,12 +1,12 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Optional
 
 from anki.collection import Collection
 
+from anki_git.engine.constants import META_DIR
 
-META_DIR = ".ki"
 META_FILE = "meta.json"
 
 

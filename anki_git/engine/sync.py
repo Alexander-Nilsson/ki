@@ -19,6 +19,7 @@ from anki.notes import NoteId
 
 from anki_git.config import SyncMode
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR, META_DIR
 from anki_git.engine.conflict import (
     process_conflicts,
     merge_notetypes,
@@ -42,10 +43,6 @@ from anki_git.formats.notetype_yaml import (
 from anki_git.formats.notes_md import Note
 
 _logger = logging.getLogger("anki_git")
-
-NOTETYPES_DIR = "notetypes"
-DECKS_DIR = "decks"
-META_DIR = ".ki"
 
 
 @dataclass

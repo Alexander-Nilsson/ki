@@ -6,21 +6,18 @@ remain testable without the Anki Qt runtime.
 """
 
 import logging
-from collections.abc import Callable
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
 
 from anki.collection import Collection
-from anki.decks import DeckId
 from anki.notes import NoteId
+
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
 
 _logger = logging.getLogger("anki_git")
-
-NOTETYPES_DIR = "notetypes"
-DECKS_DIR = "decks"
 
 
 def compute_anki_checksums(col: Collection) -> Dict[str, str]:
@@ -28,35 +25,18 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
     format as git checksums, so conflict detection works correctly.
     """
     from anki_git.engine.checksums import content_hash
-    from anki_git.formats.notes_md import Note
+    from anki_git.engine.export_helpers import capture_single_note
 
     checksums = {}
     db = col.db
     assert db is not None
     for row in db.list("SELECT id FROM notes WHERE id > 0"):
         nid = NoteId(row)
-        try:
-            note_obj = col.get_note(nid)
-        except Exception:
-            _logger.warning("Failed to get note %d for checksum", nid, exc_info=True)
+        captured = capture_single_note(col, nid)
+        if captured is None:
             continue
-        nt_dict = note_obj.note_type()
-        if nt_dict is None:
-            continue
-        nt_name = nt_dict["name"]
-        try:
-            cards = note_obj.cards()
-            if not cards:
-                continue
-            deck_name = col.decks.name(cards[0].did)
-        except Exception:
-            _logger.warning("Failed to get deck for note %d for checksum", nid, exc_info=True)
-            continue
-        note = Note(
-            nid=nid, notetype=nt_name, tags=list(note_obj.tags),
-            deck=deck_name, fields=dict(note_obj.items()),
-        )
-        checksums[str(nid)] = content_hash(note.serialize())
+        serialized, _ = captured
+        checksums[str(nid)] = content_hash(serialized)
     return checksums
 
 
@@ -209,41 +189,18 @@ def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
 
 def import_notetypes(col: Collection, repo_path: Path, result) -> None:
     """Import all notetypes from repo into Anki, updating result in-place."""
+    for name in _repo_notetype_names(repo_path):
+        exists = col.models.by_name(name) is not None
+        if import_notetype(col, repo_path, name):
+            if exists:
+                result.notetypes_updated += 1
+            else:
+                result.notetypes_created += 1
+
+
+def _repo_notetype_names(repo_path: Path) -> list[str]:
     from anki_git.formats.notetype_yaml import read_all_notetypes
-
-    notetypes_dir = repo_path / NOTETYPES_DIR
-    repo_notetypes = read_all_notetypes(notetypes_dir)
-
-    for name, nt in repo_notetypes.items():
-        existing = col.models.by_name(name)
-        if existing:
-            existing["flds"] = [
-                {"name": f.name, "ord": f.ord, "font": f.font,
-                 "size": f.size, "sticky": f.sticky, "rtl": f.rtl, "id": f.id}
-                for f in nt.fields
-            ]
-            existing["tmpls"] = [
-                {"name": t.name, "ord": t.ord, "qfmt": t.qfmt,
-                 "afmt": t.afmt, "id": t.id}
-                for t in nt.templates
-            ]
-            existing["css"] = nt.css
-            col.models.save(existing)
-            result.notetypes_updated += 1
-        else:
-            new_nt = col.models.new(name)
-            for f in nt.fields:
-                field = col.models.new_field(f.name)
-                field["rtl"] = f.rtl
-                col.models.add_field(new_nt, field)
-            for t in nt.templates:
-                tmpl = col.models.new_template(t.name)
-                tmpl["qfmt"] = t.qfmt
-                tmpl["afmt"] = t.afmt
-                col.models.add_template(new_nt, tmpl)
-            new_nt["css"] = nt.css
-            col.models.add_dict(new_nt)
-            result.notetypes_created += 1
+    return sorted(read_all_notetypes(repo_path / NOTETYPES_DIR).keys())
 
 
 def import_notes(col: Collection, repo_path: Path, result,

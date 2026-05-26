@@ -5,6 +5,5 @@
     "media_strategy": "none",
     "auto_push_after_snapshot": true,
     "log_level": "INFO",
-    "sync_mode": "always_ask",
-    "background_mode": false
+    "sync_mode": "always_ask"
 }

@@ -6,12 +6,12 @@
   },
   "auto_sync_on_startup": {
     "type": "boolean",
-    "value": false,
+    "value": true,
     "description": "Automatically take a snapshot when Anki starts"
   },
   "auto_snapshot_on_close": {
     "type": "boolean",
-    "value": false,
+    "value": true,
     "description": "Automatically take a snapshot when Anki closes"
   },
   "debounce_delay_ms": {
@@ -31,7 +31,7 @@
   },
   "auto_push_after_snapshot": {
     "type": "boolean",
-    "value": false,
+    "value": true,
     "description": "Automatically push to remote after each snapshot"
   },
   "log_level": {
@@ -39,9 +39,9 @@
     "value": "INFO",
     "description": "Logging level (DEBUG, INFO, WARNING, ERROR)"
   },
-  "background_mode": {
-    "type": "boolean",
-    "value": false,
-    "description": "Run auto operations silently in the background without dialogs"
+  "sync_mode": {
+    "type": "string",
+    "value": "always_ask",
+    "description": "Conflict resolution mode (always_ask, prefer_anki, prefer_repo, accept_all)"
   }
 }

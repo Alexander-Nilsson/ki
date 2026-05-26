@@ -248,12 +248,14 @@ def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
     builds one (less efficient for batch operations).
     """
     from anki_git.engine.import_helpers import load_all_repo_notes
-    from anki_git.formats.notes_md import Note
 
     if notes_lookup is None:
         repo_notes = load_all_repo_notes(repo_path)
     else:
         repo_notes = notes_lookup
+
+    if not report.has_conflicts:
+        return
 
     for c in report.conflicts:
         if c.conflict_type != ConflictType.CONFLICT:

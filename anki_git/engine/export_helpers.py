@@ -14,12 +14,12 @@ from typing import Optional, Tuple, TYPE_CHECKING
 from anki.collection import Collection
 from anki.notes import NoteId
 
+from anki_git.engine.constants import DECKS_DIR
+
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
 
 _logger = logging.getLogger("anki_git")
-
-DECKS_DIR = "decks"
 
 
 def capture_single_note(col: Collection, nid: int) -> Optional[Tuple[str, Note]]:

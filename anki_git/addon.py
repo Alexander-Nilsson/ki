@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from anki_git.config import KiSyncConfig
-from anki_git.engine.exporter import CapturedExport, export_collection
+from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
 
 
@@ -16,6 +16,17 @@ def _get_remote_url(repo_path: Path, enabled: bool = True) -> str:
         return ""
     repo = open_repo(repo_path)
     return get_existing_remote_url(repo) if repo else ""
+
+
+def _run_query_op(mw, op, on_success, on_failure, progress_text):
+    from aqt.operations import QueryOp
+    QueryOp(
+        parent=mw,
+        op=op,
+        success=on_success,
+    ).failure(on_failure).with_progress(
+        progress_text
+    ).run_in_background()
 
 
 def _import(name):
@@ -91,7 +102,6 @@ def save_config(config: KiSyncConfig) -> None:
 
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox
-    from aqt.operations import QueryOp
     from anki_git.ui import DiffDialog
     from anki_git.engine.diff import compute_export_diff
 
@@ -190,13 +200,7 @@ def snapshot_action() -> None:
                 mw, "AnkiGit", f"Snapshot failed: {e}"
             )
 
-        QueryOp(
-            parent=mw,
-            op=do_export,
-            success=on_export_done,
-        ).failure(on_export_failed).with_progress(
-            "Taking Snapshot..."
-        ).run_in_background()
+        _run_query_op(mw, do_export, on_export_done, on_export_failed, "Taking Snapshot...")
 
     def on_diff_failed(e):
         _logger.exception("Failed to compute export diff")
@@ -204,18 +208,11 @@ def snapshot_action() -> None:
             mw, "AnkiGit", f"Failed to compute diff: {e}"
         )
 
-    QueryOp(
-        parent=mw,
-        op=get_diff_with_progress,
-        success=on_diff_done,
-    ).failure(on_diff_failed).with_progress(
-        "Reviewing Changes..."
-    ).run_in_background()
+    _run_query_op(mw, get_diff_with_progress, on_diff_done, on_diff_failed, "Reviewing Changes...")
 
 
 def import_action() -> None:
     from aqt.qt import QMessageBox
-    from aqt.operations import QueryOp
     from anki_git.ui import ConflictResolutionDialog, DiffDialog
     from anki_git.engine.importer import pull_from_repo
     from anki_git.engine.diff import compute_import_diff
@@ -328,13 +325,7 @@ def import_action() -> None:
                 mw, "AnkiGit", f"Import failed: {e}"
             )
 
-        QueryOp(
-            parent=mw,
-            op=do_import,
-            success=on_import_done,
-        ).failure(on_import_failed).with_progress(
-            "Pulling from Repo..."
-        ).run_in_background()
+        _run_query_op(mw, do_import, on_import_done, on_import_failed, "Pulling from Repo...")
 
     def on_diff_failed(e):
         _logger.exception("Failed to compute import diff")
@@ -342,13 +333,7 @@ def import_action() -> None:
             mw, "AnkiGit", f"Failed to compute diff: {e}"
         )
 
-    QueryOp(
-        parent=mw,
-        op=get_diff_with_progress,
-        success=on_diff_done,
-    ).failure(on_diff_failed).with_progress(
-        "Reviewing Changes..."
-    ).run_in_background()
+    _run_query_op(mw, get_diff_with_progress, on_diff_done, on_diff_failed, "Reviewing Changes...")
 
 
 def settings_action() -> None:
@@ -395,37 +380,6 @@ def show_menu() -> None:
 _menu_shown = False
 
 
-def _run_background_export(config: KiSyncConfig, quick: bool = False) -> None:
-    """Run exporter silently with no user dialogs. Only logs errors."""
-    from aqt import mw
-    from aqt.operations import QueryOp
-    from anki_git.engine.exporter import export_collection
-
-    repo_path = Path(config.repo_path)
-
-    def do_export(col):
-        result = export_collection(
-            col, repo_path,
-            remote_url=_get_remote_url(repo_path, config.auto_push_after_snapshot),
-            media_strategy=config.media_strategy,
-            quick=quick,
-        )
-        if result.error:
-            _logger.error("Background export failed: %s", result.error)
-        else:
-            _logger.info(
-                "Background export: %d notes changed",
-                result.notes_changed,
-            )
-        return result
-
-    QueryOp(
-        parent=mw,
-        op=do_export,
-        success=lambda _: None,
-    ).run_in_background()
-
-
 def _try_fetch(remote) -> None:
     try:
         remote.fetch()
@@ -459,7 +413,6 @@ def _run_startup_import(config: KiSyncConfig) -> None:
     """
     from aqt import mw
     from aqt.qt import QMessageBox
-    from aqt.operations import QueryOp
     from anki_git.ui import DiffDialog
     from anki_git.engine.diff import compute_import_diff
     from anki_git.engine.checksums import quick_repo_has_changes
@@ -577,24 +530,12 @@ def _run_startup_import(config: KiSyncConfig) -> None:
         def on_import_failed(e):
             QMessageBox.critical(mw, "AnkiGit", f"Import failed: {e}")
 
-        QueryOp(
-            parent=mw,
-            op=do_import,
-            success=on_import_done,
-        ).failure(on_import_failed).with_progress(
-            "Importing from repo..."
-        ).run_in_background()
+        _run_query_op(mw, do_import, on_import_done, on_import_failed, "Importing from repo...")
 
     def on_diff_failed(e):
         QMessageBox.critical(mw, "AnkiGit", f"Failed to compute diff: {e}")
 
-    QueryOp(
-        parent=mw,
-        op=do_startup_check,
-        success=on_diff_done,
-    ).failure(on_diff_failed).with_progress(
-        "Checking for changes..."
-    ).run_in_background()
+    _run_query_op(mw, do_startup_check, on_diff_done, on_diff_failed, "Checking for changes...")
 
 
 def on_profile_open() -> None:

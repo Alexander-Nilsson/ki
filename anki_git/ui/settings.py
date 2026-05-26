@@ -50,15 +50,6 @@ class SettingsDialog(QDialog):
         self._auto_close_cb = QCheckBox("Auto-snapshot on close", self)
         sync_layout.addRow(self._auto_close_cb)
 
-        self._bg_mode_cb = QCheckBox("Background mode (no dialogs)", self)
-        sync_layout.addRow(self._bg_mode_cb)
-        bg_note = QLabel(
-            "Run auto operations silently without progress or result dialogs.\n"
-            "Errors are logged to the addon log file."
-        )
-        bg_note.setStyleSheet("color: #888; font-size: 11px;")
-        sync_layout.addRow("", bg_note)
-
         self._auto_push_cb = QCheckBox("Auto-push after snapshot", self)
         sync_layout.addRow(self._auto_push_cb)
 
@@ -104,7 +95,6 @@ class SettingsDialog(QDialog):
         self._repo_path_input.setText(self.config.repo_path)
         self._auto_startup_cb.setChecked(self.config.auto_sync_on_startup)
         self._auto_close_cb.setChecked(self.config.auto_snapshot_on_close)
-        self._bg_mode_cb.setChecked(self.config.background_mode)
         self._auto_push_cb.setChecked(self.config.auto_push_after_snapshot)
 
         idx = self._media_strategy_combo.findText(self.config.media_strategy)
@@ -142,7 +132,6 @@ class SettingsDialog(QDialog):
         self.config.repo_path = self._repo_path_input.text().strip()
         self.config.auto_sync_on_startup = self._auto_startup_cb.isChecked()
         self.config.auto_snapshot_on_close = self._auto_close_cb.isChecked()
-        self.config.background_mode = self._bg_mode_cb.isChecked()
         self.config.auto_push_after_snapshot = self._auto_push_cb.isChecked()
         self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.sync_mode = self._sync_mode_combo.currentData()

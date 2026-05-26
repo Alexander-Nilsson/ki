@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from anki.collection import Collection
 
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR, META_DIR
 from anki_git.engine.git_ops import (
     get_or_init_repo,
     stage_files,
@@ -27,10 +28,6 @@ from anki_git.formats.notes_md import Note
 from anki_git.formats.media import handle_media, get_media_filenames_from_fields, MediaStrategy
 
 _logger = logging.getLogger("anki_git")
-
-NOTETYPES_DIR = "notetypes"
-DECKS_DIR = "decks"
-META_DIR = ".ki"
 
 
 class ExportResult:
@@ -73,6 +70,7 @@ class CapturedExport:
     last_max_mod: int
     last_note_count: int
     col_media_dir: Optional[Path]
+    media_strategy: str = "none"
 
 
 def _note_file_path(repo_path: Path, note: Note) -> Path:
@@ -184,6 +182,7 @@ def capture_export_data(
         last_max_mod=last_max_mod,
         last_note_count=last_note_count,
         col_media_dir=col_media_dir,
+        media_strategy=media_strategy,
     )
 
 
@@ -255,7 +254,7 @@ def write_export_data(
         if progress_callback:
             progress_callback("Handling media files...")
         repo_media_dir = repo_path / "media"
-        strategy = MediaStrategy("mirror")
+        strategy = MediaStrategy(captured.media_strategy)
         handle_media(captured.col_media_dir, repo_media_dir, strategy, captured.media_filenames)
 
     result.notes_changed = notes_changed

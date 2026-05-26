@@ -84,7 +84,8 @@ def push_to_remote(repo: Repo, remote_url: str) -> None:
             _logger.info("Creating remote origin with URL %s", remote_url)
             remote = repo.create_remote("origin", remote_url)
 
-        remote.push(refspec="main:main")
+        branch = repo.active_branch.name
+        remote.push(refspec=f"{branch}:{branch}")
     except Exception:
         _logger.exception("Failed to push to remote")
         raise

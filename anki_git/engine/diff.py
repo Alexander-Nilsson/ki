@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
+
 _logger = logging.getLogger("anki_git")
 
 from anki_git.formats.notes_md import Note, parse_notes_file
@@ -72,9 +74,7 @@ class NotetypeDiff:
     name: str
     change_type: str  # "modified", "added", "deleted"
     component_changes: List[ComponentChange] = field(default_factory=list)
-    # legacy fields kept for backwards compat
     fields_diff: str = ""
-    templates_diff: str = ""
     css_diff: str = ""
 
 
@@ -287,7 +287,6 @@ def compute_notetype_diff(
         has_diff = True
 
     # Compare CSS
-    import difflib
     if old_nt.css != new_nt.css:
         has_diff = True
         css_diff_lines = list(difflib.unified_diff(
@@ -331,8 +330,8 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
     if progress_callback:
         progress_callback("Reading notetypes...")
 
-    notetypes_dir = repo_path / "notetypes"
-    decks_dir = repo_path / "decks"
+    notetypes_dir = repo_path / NOTETYPES_DIR
+    decks_dir = repo_path / DECKS_DIR
 
     old_notetypes = _read_nt(notetypes_dir)
     current_notetypes: Dict[str, Notetype] = {}
@@ -403,8 +402,8 @@ def compute_import_diff(col, repo_path: Path, progress_callback: Optional[Callab
     if progress_callback:
         progress_callback("Reading notetypes...")
 
-    notetypes_dir = repo_path / "notetypes"
-    decks_dir = repo_path / "decks"
+    notetypes_dir = repo_path / NOTETYPES_DIR
+    decks_dir = repo_path / DECKS_DIR
 
     repo_notetypes = _read_nt(notetypes_dir)
     col_notetypes: Dict[str, Notetype] = {}
