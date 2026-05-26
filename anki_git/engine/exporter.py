@@ -3,9 +3,12 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple, TYPE_CHECKING
 
 from anki.collection import Collection
+
+if TYPE_CHECKING:
+    from anki_git.engine.diff import ExportDiffData
 
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
 from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
@@ -237,10 +240,11 @@ def write_export_data(
         progress_callback("Cleaning up stale files...")
     cleaned = 0
     for notes_file in sorted((repo_path / DECKS_DIR).rglob("*.md")):
-        from anki_git.formats.notes_md import parse_note_section
-        text = notes_file.read_text(encoding="utf-8")
-        note_data = parse_note_section(text)
-        if note_data is not None and note_data.nid not in captured.all_nids:
+        try:
+            nid = int(notes_file.stem)
+        except ValueError:
+            continue
+        if nid not in captured.all_nids:
             try:
                 notes_file.unlink()
                 cleaned += 1
@@ -306,13 +310,52 @@ def export_collection(
     progress_callback: Optional[Callable[[str], None]] = None,
     media_strategy: str = "none",
     quick: bool = False,
+    export_data: Optional["ExportDiffData"] = None,
 ) -> ExportResult:
     """Full export: capture data from collection then write to disk+git.
+
+    When export_data is provided (from a prior compute_export_diff_delta()),
+    skips the note/notetype re-scan and reuses the pre-computed data.
+    A few scalar queries (all_nids, last_note_count, last_max_mod) are
+    still issued for freshness.
 
     Runs both phases synchronously with progress.  For non-blocking close
     behaviour use capture_export_data() directly followed by a background
     call to write_export_data().
     """
+    if export_data is not None:
+        db = col.db
+        if db is None:
+            raise RuntimeError("Collection closed, aborting export")
+        all_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
+        last_note_count = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
+        last_max_mod = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+
+        note_checksums = dict(export_data.note_checksums)
+        for nid_str in list(note_checksums):
+            if int(nid_str) not in all_nids:
+                del note_checksums[nid_str]
+
+        captured = CapturedExport(
+            notetypes=export_data.notetypes,
+            changed_notetype_names=export_data.changed_notetype_names,
+            nids=set(export_data.note_entries.keys()),
+            all_nids=all_nids,
+            note_entries=list(export_data.note_entries.values()),
+            note_checksums=note_checksums,
+            media_filenames=export_data.media_filenames,
+            collection_path=export_data.collection_path or str(col.path),
+            last_max_mod=last_max_mod,
+            last_note_count=last_note_count,
+            col_media_dir=export_data.col_media_dir,
+            media_strategy=export_data.media_strategy,
+        )
+        return write_export_data(
+            repo_path, captured,
+            remote_url=remote_url,
+            progress_callback=progress_callback,
+        )
+
     captured = capture_export_data(
         col, repo_path,
         quick=quick,

@@ -4,7 +4,7 @@ import difflib
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set
+from typing import Callable, Dict, List, Optional, Set, Tuple
 
 from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 
@@ -105,6 +105,27 @@ class ImportDiffData:
     repo_notetypes: Dict[str, Notetype] = field(default_factory=dict)
     anki_checksums: Dict[str, str] = field(default_factory=dict)
     git_checksums: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class ExportDiffData:
+    """Combines a display DiffReport with serialized note data for the export phase.
+
+    The serialized data (note_entries, checksums) is computed once during
+    the diff phase and passed to export_collection() to avoid re-scanning.
+    """
+    report: DiffReport
+    note_entries: Dict[int, Tuple[int, str, "Note"]] = field(default_factory=dict)
+    note_checksums: Dict[str, str] = field(default_factory=dict)
+    all_nids: Set[int] = field(default_factory=set)
+    changed_notetype_names: List[str] = field(default_factory=list)
+    notetypes: Dict[str, Notetype] = field(default_factory=dict)
+    media_filenames: Set[str] = field(default_factory=set)
+    collection_path: str = ""
+    last_max_mod: int = 0
+    last_note_count: int = 0
+    col_media_dir: Optional[Path] = None
+    media_strategy: str = "none"
 
 
 def _unified_diff(old: str, new: str, name: str) -> List[str]:
@@ -679,4 +700,308 @@ def compute_import_diff_delta(col, repo_path: Path,
         repo_notetypes=repo_notetypes or None,
         anki_checksums=merged_anki,
         git_checksums=merged_git,
+    )
+
+
+def _nid_from_filename(path: Path) -> Optional[int]:
+    """Extract nid from a decks/<deck>/<nid>.md path."""
+    if path.suffix != ".md":
+        return None
+    try:
+        return int(path.stem)
+    except ValueError:
+        return None
+
+
+def _build_notetype_diff_report(
+    old_notetypes: Dict[str, Notetype],
+    current_notetypes: Dict[str, Notetype],
+    report: DiffReport,
+) -> None:
+    """Populate report.notetype_diffs from old and current notetypes."""
+    all_nt_names = set(old_notetypes) | set(current_notetypes)
+    for name in sorted(all_nt_names):
+        diff = compute_notetype_diff(
+            old_notetypes.get(name), current_notetypes.get(name)
+        )
+        if diff:
+            report.notetype_diffs.append(diff)
+
+
+def _build_note_diff_report(
+    repo_notes: Dict[int, Note],
+    anki_notes: Dict[int, Note],
+    report: DiffReport,
+) -> None:
+    """Populate report.note_diffs from repo and anki note dicts."""
+    seen_ids: Set[int] = set()
+    for nid, repo_note in repo_notes.items():
+        seen_ids.add(nid)
+        anki_note = anki_notes.get(nid)
+        nd = compute_note_diff(repo_note, anki_note)
+        if nd.change_type != "unchanged":
+            report.note_diffs.append(nd)
+
+    for nid, anki_note in anki_notes.items():
+        if nid not in seen_ids:
+            nd = compute_note_diff(None, anki_note)
+            if nd.change_type != "unchanged":
+                report.note_diffs.append(nd)
+
+    for nid, repo_note in repo_notes.items():
+        if nid not in seen_ids:
+            nd = compute_note_diff(repo_note, None)
+            if nd.change_type != "unchanged":
+                report.note_diffs.append(nd)
+
+
+def _full_export_diff_scan(
+    col,
+    repo_path: Path,
+    old_notetypes: Dict[str, Notetype],
+    current_notetypes: Dict[str, Notetype],
+    changed_notetype_names: List[str],
+    media_strategy: str,
+    progress_callback: Optional[Callable] = None,
+) -> ExportDiffData:
+    """Full export scan: read all notes and all .md files.
+
+    Used as fallback when no delta baseline exists (first run).
+    Also serializes notes for pass-through to avoid a second scan.
+    """
+    from anki_git.engine.checksums import content_hash
+    from anki_git.engine.export_helpers import capture_single_note
+    from anki_git.formats.media import get_media_filenames_from_fields
+
+    report = DiffReport()
+    decks_dir = repo_path / DECKS_DIR
+
+    # Read all repo .md files
+    repo_notes: Dict[int, Note] = {}
+    if decks_dir.exists():
+        files = list(decks_dir.rglob("*.md"))
+        for f in files:
+            for rn in parse_notes_file(f):
+                repo_notes[rn.nid] = rn
+
+    nids = col.db.list("SELECT id FROM notes WHERE id > 0")
+    total = len(nids)
+
+    anki_notes: Dict[int, Note] = {}
+    note_entries: Dict[int, Tuple[int, str, Note]] = {}
+    note_checksums: Dict[str, str] = {}
+    media_filenames: Set[str] = set()
+
+    for i, nid in enumerate(nids):
+        if progress_callback and i % 20 == 0:
+            progress_callback(f"Reading notes... {i}/{total}")
+        captured = capture_single_note(col, nid)
+        if captured is None:
+            continue
+        serialized, note = captured
+        checksum = content_hash(serialized)
+        note_checksums[str(nid)] = checksum
+        note_entries[nid] = (nid, serialized, note)
+        anki_notes[nid] = note
+        if media_strategy != "none":
+            for field_value in note.fields.values():
+                media_filenames.update(get_media_filenames_from_fields(field_value))
+
+    all_nids = set(nids)
+
+    _build_notetype_diff_report(old_notetypes, current_notetypes, report)
+    _build_note_diff_report(repo_notes, anki_notes, report)
+
+    db = col.db
+    col_media_dir: Optional[Path] = None
+    if media_strategy != "none":
+        col_media_dir = (
+            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
+            else Path(col.path).parent / "collection.media"
+        )
+
+    return ExportDiffData(
+        report=report,
+        note_entries=note_entries,
+        note_checksums=note_checksums,
+        all_nids=all_nids,
+        changed_notetype_names=changed_notetype_names,
+        notetypes=current_notetypes,
+        media_filenames=media_filenames,
+        collection_path=str(col.path),
+        last_max_mod=db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0,
+        last_note_count=db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0,
+        col_media_dir=col_media_dir,
+        media_strategy=media_strategy,
+    )
+
+
+def compute_export_diff_delta(
+    col,
+    repo_path: Path,
+    media_strategy: str = "none",
+    progress_callback: Optional[Callable] = None,
+) -> ExportDiffData:
+    """Delta-based export diff using mod timestamps and git to find only changed notes.
+
+    Returns ExportDiffData containing the DiffReport and serialized note data
+    for pass-through to export_collection().
+
+    Falls back to full scan if no baseline exists (first run).
+    """
+    from anki_git.engine.checksums import load_meta, content_hash
+    from anki_git.engine.git_ops import get_changed_repo_files
+    from anki_git.engine.export_helpers import capture_single_note
+    from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
+    from anki_git.formats.media import get_media_filenames_from_fields
+
+    meta = load_meta(repo_path)
+    last_commit_sha = meta.get("last_commit_sha")
+    last_max_mod = meta.get("last_max_mod", 0)
+    meta_checksums = meta.get("note_checksums", {})
+
+    if progress_callback:
+        progress_callback("Reading notetypes...")
+
+    notetypes_dir = repo_path / NOTETYPES_DIR
+    old_notetypes = _read_nt(notetypes_dir)
+    current_notetypes: Dict[str, Notetype] = {}
+    for nt_dict in col.models.all():
+        nt = Notetype.from_anki_dict(nt_dict)
+        current_notetypes[nt.name] = nt
+
+    changed_notetype_names: List[str] = []
+    for name, nt in current_notetypes.items():
+        if nt != old_notetypes.get(name):
+            changed_notetype_names.append(name)
+
+    # Fall back to full scan on first run (no baseline)
+    if not last_commit_sha:
+        _logger.info("No last_commit_sha baseline — falling back to full export scan")
+        return _full_export_diff_scan(
+            col, repo_path, old_notetypes, current_notetypes, changed_notetype_names,
+            media_strategy, progress_callback=progress_callback,
+        )
+
+    if progress_callback:
+        progress_callback("Checking for changes...")
+
+    db = col.db
+    all_nids: Set[int] = set(db.list("SELECT id FROM notes WHERE id > 0"))
+
+    # Notes changed in Anki since last export
+    changed_anki_nids: Set[int] = set()
+    if last_max_mod:
+        try:
+            changed_anki_nids = set(
+                db.list("SELECT id FROM notes WHERE mod > ? AND id > 0", last_max_mod)
+            )
+        except Exception:
+            _logger.warning("Failed to query changed notes by mod", exc_info=True)
+
+    # Notes deleted from Anki (in meta checksums but gone from collection)
+    deleted_anki_nids: Set[int] = set()
+    for nid_str in meta_checksums:
+        if int(nid_str) not in all_nids:
+            deleted_anki_nids.add(int(nid_str))
+
+    # Notes with changed repo files
+    changed_repo_files, deleted_repo_files = get_changed_repo_files(repo_path, last_commit_sha)
+    changed_repo_nids: Set[int] = set()
+    for p in list(changed_repo_files) + list(deleted_repo_files):
+        nid = _nid_from_filename(p)
+        if nid is not None:
+            changed_repo_nids.add(nid)
+
+    affected_nids: Set[int] = changed_anki_nids | deleted_anki_nids | changed_repo_nids
+
+    if not affected_nids and not changed_notetype_names:
+        _logger.info("No changed notes or notetypes detected")
+        report = DiffReport()
+        _build_notetype_diff_report(old_notetypes, current_notetypes, report)
+        return ExportDiffData(report=report, all_nids=all_nids)
+
+    _logger.info(
+        "Delta export: %d Anki-changed, %d Anki-deleted, %d repo-changed",
+        len(changed_anki_nids), len(deleted_anki_nids), len(changed_repo_nids),
+    )
+
+    if progress_callback:
+        progress_callback(f"Processing {len(affected_nids)} affected notes...")
+
+    # Build path lookup using rglob (fast — lists paths, doesn't read contents)
+    decks_dir = repo_path / DECKS_DIR
+    nid_to_path: Dict[int, Path] = {}
+    if decks_dir.exists():
+        for p in decks_dir.rglob("*.md"):
+            nid = _nid_from_filename(p)
+            if nid is not None:
+                nid_to_path[nid] = p
+
+    # Parse repo notes for affected nids
+    repo_notes: Dict[int, Note] = {}
+    for nid in affected_nids:
+        path = nid_to_path.get(nid)
+        if path is not None and path.exists():
+            for rn in parse_notes_file(path):
+                repo_notes[rn.nid] = rn
+
+    # Fetch and serialize Anki notes for affected nids
+    anki_notes: Dict[int, Note] = {}
+    note_entries: Dict[int, Tuple[int, str, Note]] = {}
+    note_checksums: Dict[str, str] = {}
+    media_filenames: Set[str] = set()
+
+    for nid in sorted(affected_nids):
+        if nid not in all_nids:
+            continue
+        if progress_callback:
+            progress_callback(f"Reading note {nid}...")
+        captured = capture_single_note(col, nid)
+        if captured is None:
+            continue
+        serialized, note = captured
+        checksum = content_hash(serialized)
+        note_checksums[str(nid)] = checksum
+        note_entries[nid] = (nid, serialized, note)
+        anki_notes[nid] = note
+        if media_strategy != "none":
+            for field_value in note.fields.values():
+                media_filenames.update(get_media_filenames_from_fields(field_value))
+
+    # Build diff report
+    report = DiffReport()
+    _build_notetype_diff_report(old_notetypes, current_notetypes, report)
+    _build_note_diff_report(repo_notes, anki_notes, report)
+
+    # Merge checksums: base + new + stale cleanup
+    merged_checksums = dict(meta_checksums)
+    merged_checksums.update(note_checksums)
+    for nid_str in list(merged_checksums):
+        if int(nid_str) not in all_nids:
+            del merged_checksums[nid_str]
+
+    col_media_dir: Optional[Path] = None
+    if media_strategy != "none":
+        col_media_dir = (
+            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
+            else Path(col.path).parent / "collection.media"
+        )
+
+    fresh_max_mod = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+    fresh_note_count = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
+
+    return ExportDiffData(
+        report=report,
+        note_entries=note_entries,
+        note_checksums=merged_checksums,
+        all_nids=all_nids,
+        changed_notetype_names=changed_notetype_names,
+        notetypes=current_notetypes,
+        media_filenames=media_filenames,
+        collection_path=str(col.path),
+        last_max_mod=fresh_max_mod,
+        last_note_count=fresh_note_count,
+        col_media_dir=col_media_dir,
+        media_strategy=media_strategy,
     )

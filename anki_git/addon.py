@@ -103,7 +103,7 @@ def save_config(config: KiSyncConfig) -> None:
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox
     from anki_git.ui import DiffDialog
-    from anki_git.engine.diff import compute_export_diff
+    from anki_git.engine.diff import compute_export_diff_delta
 
     config = load_config()
     from aqt import mw
@@ -123,33 +123,34 @@ def snapshot_action() -> None:
     repo_path = Path(config.repo_path)
 
     def get_diff_with_progress(col):
-        _logger.info("Computing export diff...")
-        report = compute_export_diff(
+        _logger.info("Computing export diff (delta)...")
+        data = compute_export_diff_delta(
             col, repo_path,
+            media_strategy=config.media_strategy,
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             )
         )
         _logger.info(
             "Diff computed: %d notes, %d notetypes changed",
-            len(report.note_diffs), len(report.notetype_diffs)
+            len(data.report.note_diffs), len(data.report.notetype_diffs)
         )
-        if not report.has_changes:
-            return report, None
+        if not data.report.has_changes:
+            return data, None
 
         _logger.info("Converting report to UI data...")
         mw.taskman.run_on_main(
             lambda: mw.progress.update(label="Preparing preview...")
         )
         from anki_git.ui.diff import report_to_diff_data
-        ui_data = report_to_diff_data(report)
+        ui_data = report_to_diff_data(data.report)
         _logger.info("UI data ready (%d items)", len(ui_data))
-        return report, ui_data
+        return data, ui_data
 
     def on_diff_done(result_tuple):
         _logger.info("on_diff_done reached")
-        report, ui_data = result_tuple
-        if not report.has_changes:
+        data, ui_data = result_tuple
+        if not data or not data.report.has_changes:
             _logger.info("No changes to export")
             QMessageBox.information(
                 mw, "AnkiGit",
@@ -175,6 +176,7 @@ def snapshot_action() -> None:
                     lambda: mw.progress.update(label=text)
                 ),
                 media_strategy=config.media_strategy,
+                export_data=data,
             )
 
         def on_export_done(result):
