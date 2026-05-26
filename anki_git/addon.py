@@ -608,40 +608,35 @@ def on_profile_close() -> None:
         _logger.info("No changes captured, skipping write")
         return
 
-    # Phase 2 — write files + git commit (synchronous, fast for delta).
-    # No push here — that happens in phase 3.
-    from anki_git.engine.exporter import write_export_data
+    # Phase 2+3 — write files + git commit + push in a non-daemon thread.
+    # The captured data is fully serialized, so no collection access needed.
+    # Using non-daemon so the thread completes before process exit.
+    import threading
     _logger.info(
-        "Auto-export on close: writing %d notes, %d notetypes",
+        "Auto-export on close: %d notes, spawning background write",
         len(captured.note_entries),
-        len(captured.changed_notetype_names),
     )
-    try:
-        result = write_export_data(
-            repo_path, captured,
-            remote_url="",
-        )
-        if result.error:
-            _logger.warning("Write on close failed: %s", result.error)
-            return
-        _logger.info(
-            "Write on close: %d notes, %d notetypes committed",
-            result.notes_changed,
-            result.notetypes_changed,
-        )
-    except Exception as e:
-        _logger.warning("Write on close crashed: %s", e)
-        return
 
-    # Phase 3 — push to remote in a daemon thread (can be killed safely).
-    if remote_url:
-        import threading
-        thread = threading.Thread(
-            target=_push_background,
-            args=(repo_path, remote_url),
-            daemon=True,
-        )
-        thread.start()
+    def _write_and_push() -> None:
+        from anki_git.engine.exporter import write_export_data
+        try:
+            result = write_export_data(
+                repo_path, captured,
+                remote_url=remote_url,
+            )
+            if result.error:
+                _logger.warning("Write on close failed: %s", result.error)
+                return
+            _logger.info(
+                "Write on close: %d notes, %d notetypes committed",
+                result.notes_changed,
+                result.notetypes_changed,
+            )
+        except Exception as e:
+            _logger.warning("Write on close crashed: %s", e)
+
+    thread = threading.Thread(target=_write_and_push, daemon=False)
+    thread.start()
 
 
 def init_addon() -> None:

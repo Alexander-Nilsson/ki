@@ -36,6 +36,8 @@ def capture_single_note(col: Collection, nid: int) -> Optional[Tuple[str, Note]]
 
     try:
         note_obj = col.get_note(NoteId(nid))
+    except RuntimeError:
+        raise
     except Exception:
         _logger.warning("Failed to get note %d", nid)
         return None
