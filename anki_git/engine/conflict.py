@@ -82,7 +82,7 @@ def resolve_conflicts(report: ConflictReport, sync_mode: str) -> None:
                 c.resolution = "git"
                 c.resolved = True
             elif sync_mode == SyncMode.ACCEPT_ALL:
-                c.resolution = "anki"
+                c.resolution = "git"
                 c.resolved = True
             # ALWAYS_ASK: leave unresolved
         elif c.conflict_type == ConflictType.ANKI_WINS:
@@ -141,11 +141,11 @@ def merge_notetypes(
                     component_type="field", name=af.name,
                     anki_content=repr(af), git_content=repr(gf),
                 )
-                if sync_mode == SyncMode.PREFER_REPO:
+                if sync_mode in (SyncMode.PREFER_REPO, SyncMode.ACCEPT_ALL):
                     c.resolved = True
                     c.resolution = "git"
                     merged_fields.append(gf)
-                elif sync_mode in (SyncMode.PREFER_ANKI, SyncMode.ACCEPT_ALL):
+                elif sync_mode == SyncMode.PREFER_ANKI:
                     c.resolved = True
                     c.resolution = "anki"
                     merged_fields.append(af)
@@ -182,11 +182,11 @@ def merge_notetypes(
                     component_type="template", name=at.name,
                     anki_content=repr(at), git_content=repr(gt),
                 )
-                if sync_mode == SyncMode.PREFER_REPO:
+                if sync_mode in (SyncMode.PREFER_REPO, SyncMode.ACCEPT_ALL):
                     c.resolved = True
                     c.resolution = "git"
                     merged_templates.append(gt)
-                elif sync_mode in (SyncMode.PREFER_ANKI, SyncMode.ACCEPT_ALL):
+                elif sync_mode == SyncMode.PREFER_ANKI:
                     c.resolved = True
                     c.resolution = "anki"
                     merged_templates.append(at)
@@ -209,11 +209,11 @@ def merge_notetypes(
             component_type="css", name="style.css",
             anki_content=anki_nt.css, git_content=git_nt.css,
         )
-        if sync_mode == SyncMode.PREFER_REPO:
+        if sync_mode in (SyncMode.PREFER_REPO, SyncMode.ACCEPT_ALL):
             c.resolved = True
             c.resolution = "git"
             css = git_nt.css
-        elif sync_mode in (SyncMode.PREFER_ANKI, SyncMode.ACCEPT_ALL):
+        elif sync_mode == SyncMode.PREFER_ANKI:
             c.resolved = True
             c.resolution = "anki"
             css = anki_nt.css
@@ -224,6 +224,7 @@ def merge_notetypes(
         css = anki_nt.css
 
     merged = anki_nt.__class__(
+
         name=anki_nt.name,
         id=anki_nt.id,
         fields=merged_fields,

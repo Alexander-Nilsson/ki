@@ -166,7 +166,7 @@ def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
         ]
         existing["tmpls"] = [
             {"name": t.name, "ord": t.ord, "qfmt": t.qfmt,
-             "afmt": t.afmt}
+             "afmt": t.afmt, "bqfmt": t.bqfmt, "bafmt": t.bafmt}
             for t in nt.templates
         ]
         existing["css"] = nt.css
@@ -181,6 +181,8 @@ def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
             tmpl = col.models.new_template(t.name)
             tmpl["qfmt"] = t.qfmt
             tmpl["afmt"] = t.afmt
+            tmpl["bqfmt"] = t.bqfmt
+            tmpl["bafmt"] = t.bafmt
             col.models.add_template(new_nt, tmpl)
         new_nt["css"] = nt.css
         col.models.add_dict(new_nt)

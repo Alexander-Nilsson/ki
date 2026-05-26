@@ -19,7 +19,7 @@ from anki.notes import NoteId
 
 from anki_git.config import SyncMode
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR, META_DIR
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 from anki_git.engine.conflict import (
     process_conflicts,
     merge_notetypes,
@@ -308,10 +308,6 @@ def sync_collection(
         meta["collection_path"] = str(col.path)
 
         save_meta(repo_path, meta)
-
-        changed_files.add(
-            str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
-        )
 
         stage_files(repo, list(changed_files))
         create_snapshot_commit(repo, list(changed_files))

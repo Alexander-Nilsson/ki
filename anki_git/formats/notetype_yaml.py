@@ -114,6 +114,8 @@ class Notetype:
                 ord=t["ord"],
                 qfmt=t.get("qfmt", ""),
                 afmt=t.get("afmt", ""),
+                bqfmt=t.get("bqfmt", ""),
+                bafmt=t.get("bafmt", ""),
                 nt_id=t.get("id", 0),
             )
             for t in d.get("tmpls", [])

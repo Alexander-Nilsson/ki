@@ -137,7 +137,14 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
         if import_helpers.delete_note_from_repo(repo_path, nid):
             result.notes_deleted_from_git += 1
 
+    from anki_git.engine.git_ops import open_repo
+    repo = open_repo(repo_path)
     meta["note_checksums"] = git_checksums
+    if repo:
+        try:
+            meta["last_commit_sha"] = repo.head.commit.hexsha
+        except (ValueError, Exception):
+            pass
     save_meta(repo_path, meta)
 
     return result

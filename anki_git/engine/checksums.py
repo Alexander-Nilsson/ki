@@ -3,11 +3,15 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from git.repo import Repo
+
 from anki.collection import Collection
 
 from anki_git.engine.constants import META_DIR
 
 META_FILE = "meta.json"
+
+_CONTENT_PATHS = ("decks", "notetypes")
 
 
 def content_hash(content: str) -> str:
@@ -30,6 +34,21 @@ def save_meta(repo_root: Path, meta: dict) -> None:
     )
 
 
+def _content_has_changes(repo: Repo) -> bool:
+    """Check if content directories (decks/, notetypes/) have changes.
+
+    Ignores meta.json and other internal files — only checks for real
+    content changes that would require an import or export.
+    """
+    for path in _CONTENT_PATHS:
+        if repo.is_dirty(path=path):
+            return True
+    for f in repo.untracked_files:
+        if f.startswith("decks/") or f.startswith("notetypes/"):
+            return True
+    return False
+
+
 def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
     """Quick check if the repo has changes since last sync.
 
@@ -47,14 +66,19 @@ def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
     if repo is None:
         return True
 
-    # Check for working tree changes, ignoring .ki/meta.json
-    # (untracked and gitignored — always modified after a commit).
-    for item in repo.index.diff(None):
-        if item.a_path != ".ki/meta.json":
+    # Check for new commits
+    last_sha = meta.get("last_commit_sha")
+    try:
+        current_sha = repo.head.commit.hexsha
+        if last_sha and current_sha != last_sha:
             return True
-    for f in repo.untracked_files:
-        if f != ".ki/meta.json":
-            return True
+    except (ValueError, Exception):
+        # Fresh repo or detached HEAD issues
+        pass
+
+    # Check for working tree changes in content directories only
+    if _content_has_changes(repo):
+        return True
 
     return False
 
@@ -67,11 +91,12 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     (full sync can be skipped), True if changes likely exist, or None if
     there is no baseline yet (first run).
     """
-    from anki_git.engine.git_ops import is_dirty, open_repo
+    from anki_git.engine.git_ops import open_repo
 
     meta = load_meta(repo_path)
     last_count = meta.get("last_note_count")
     last_max_mod = meta.get("last_max_mod")
+    last_sha = meta.get("last_commit_sha")
 
     if last_count is None or last_max_mod is None:
         return None
@@ -87,7 +112,16 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     repo = open_repo(repo_path)
     if repo is None:
         return True
-    if is_dirty(repo):
+    
+    # Check for new commits
+    try:
+        current_sha = repo.head.commit.hexsha
+        if last_sha and current_sha != last_sha:
+            return True
+    except (ValueError, Exception):
+        pass
+
+    if _content_has_changes(repo):
         return True
 
     return False

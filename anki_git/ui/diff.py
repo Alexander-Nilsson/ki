@@ -162,9 +162,23 @@ def report_to_diff_data(report) -> List[Dict[str, Any]]:
         fields = []
         if ntd.component_changes:
             for cc in ntd.component_changes:
-                if cc.status in ("added", "modified"):
+                if cc.status == "modified":
+                    old_lines = cc.old_value.splitlines()
+                    new_lines = cc.new_value.splitlines()
+                    s = difflib.SequenceMatcher(None, old_lines, new_lines)
+                    hunks = []
+                    for tag, i1, i2, j1, j2 in s.get_opcodes():
+                        if tag == 'equal':
+                            continue
+                        hunks.append({
+                            "removed": "\n".join(old_lines[i1:i2]),
+                            "added": "\n".join(new_lines[j1:j2]),
+                            "context_before": "\n".join(old_lines[max(0, i1-2):i1]),
+                            "context_after": "\n".join(old_lines[i2:i2+2])
+                        })
+                elif cc.status == "added":
                     hunks = [{
-                        "removed": cc.old_value if cc.status == "modified" else "",
+                        "removed": "",
                         "added": cc.new_value,
                         "context_before": "",
                         "context_after": ""
@@ -212,9 +226,10 @@ def report_to_diff_data(report) -> List[Dict[str, Any]]:
 
 
 class DiffDialog(QDialog):
-    def __init__(self, diff_data: List[Dict[str, Any]], parent=None):
+    def __init__(self, diff_data: List[Dict[str, Any]], parent=None, accept_text: str = "Commit"):
         super().__init__(parent)
         self.diff_data = diff_data
+        self._accept_text = accept_text
         self._tree_items: List[tuple] = []  # (tree_item, data_or_node)
 
         self.setWindowTitle("Review Changes")
@@ -224,8 +239,8 @@ class DiffDialog(QDialog):
         self._populate_tree()
 
     @classmethod
-    def from_report(cls, report, parent=None):
-        return cls(report_to_diff_data(report), parent)
+    def from_report(cls, report, parent=None, accept_text: str = "Commit"):
+        return cls(report_to_diff_data(report), parent, accept_text=accept_text)
 
     def _setup_ui(self):
         main_layout = QVBoxLayout(self)
@@ -265,7 +280,7 @@ class DiffDialog(QDialog):
         self.discard_btn.clicked.connect(self.reject)
         toolbar_layout.addWidget(self.discard_btn)
 
-        self.commit_btn = QPushButton("Commit")
+        self.commit_btn = QPushButton(self._accept_text)
         self.commit_btn.setObjectName("commitBtn")
         self.commit_btn.clicked.connect(self.accept)
         toolbar_layout.addWidget(self.commit_btn)

@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Set, Tuple
 from anki.collection import Collection
 
 from anki_git.engine.checksums import content_hash, load_meta, save_meta
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR, META_DIR
+from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
 from anki_git.engine.git_ops import (
     get_or_init_repo,
     stage_files,
@@ -268,13 +268,10 @@ def write_export_data(
         meta["last_export_time"] = int(time.time())
         meta["note_checksums"] = captured.note_checksums
         meta["collection_path"] = captured.collection_path
+        meta["last_note_count"] = captured.last_note_count
+        meta["last_max_mod"] = captured.last_max_mod
         save_meta(repo_path, meta)
-        changed_files.add(
-            str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
-        )
         stage_files(repo, list(changed_files))
-        meta_rel = str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
-        repo.index.add([meta_rel], force=True)
         create_snapshot_commit(repo, list(changed_files))
         if remote_url:
             if progress_callback:

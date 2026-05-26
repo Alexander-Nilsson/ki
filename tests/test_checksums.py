@@ -136,8 +136,10 @@ def test_quick_repo_has_changes_dirty(tmp_path):
 
     save_meta(tmp_path, {"last_commit_sha": str(repo.head.commit)})
 
-    # Make repo dirty
-    (tmp_path / "dirty.txt").write_text("dirty", encoding="utf-8")
+    # Make repo dirty with a content file change
+    decks_dir = tmp_path / "decks"
+    decks_dir.mkdir()
+    (decks_dir / "note.md").write_text("dirty", encoding="utf-8")
 
     result = quick_repo_has_changes(tmp_path)
     assert result is True

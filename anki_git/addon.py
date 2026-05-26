@@ -158,7 +158,7 @@ def snapshot_action() -> None:
             return
 
         _logger.info("Opening DiffDialog...")
-        diff_dialog = DiffDialog(ui_data, mw)
+        diff_dialog = DiffDialog(ui_data, mw, accept_text="Commit")
         _logger.info("DiffDialog initialized")
         if not diff_dialog.exec():
             _logger.info("User discarded changes")
@@ -266,7 +266,7 @@ def import_action() -> None:
             )
             return
 
-        diff_dialog = DiffDialog(ui_data, mw)
+        diff_dialog = DiffDialog(ui_data, mw, accept_text="Import Changes")
         if not diff_dialog.exec():
             return
 
@@ -430,6 +430,7 @@ def _run_startup_import(config: KiSyncConfig) -> None:
         _logger.warning(
             "quick_repo_has_changes failed on startup", exc_info=True
         )
+        return
 
     # Changes detected — proceed with full diff inside a QueryOp (shows progress)
     def do_startup_check(col):
@@ -460,7 +461,7 @@ def _run_startup_import(config: KiSyncConfig) -> None:
             _logger.info("No repo changes to import on startup")
             return
 
-        diff_dialog = DiffDialog(ui_data, mw)
+        diff_dialog = DiffDialog(ui_data, mw, accept_text="Import Changes")
         if not diff_dialog.exec():
             _logger.info("User discarded startup import changes")
             return
@@ -481,27 +482,6 @@ def _run_startup_import(config: KiSyncConfig) -> None:
                 col, repo_path,
                 sync_mode=config.sync_mode,
             )
-
-            from anki_git.engine.git_ops import (
-                get_or_init_repo, stage_files, push_to_remote,
-            )
-            verify_repo = get_or_init_repo(repo_path)
-            meta_path = repo_path / ".ki" / "meta.json"
-            if meta_path.exists():
-                stage_files(verify_repo, [str(meta_path.relative_to(repo_path))])
-                num_notes = result.notes_updated + result.notes_created
-                num_nt = result.notetypes_updated + result.notetypes_created
-                msg_parts = []
-                if num_notes:
-                    msg_parts.append(f"{num_notes} notes")
-                if num_nt:
-                    msg_parts.append(f"{num_nt} notetypes")
-                detail = ", ".join(msg_parts) if msg_parts else "metadata"
-                verify_repo.index.commit(f"Import {detail} from repo")
-
-            remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
-            if remote_url:
-                push_to_remote(verify_repo, remote_url)
 
             return result
 

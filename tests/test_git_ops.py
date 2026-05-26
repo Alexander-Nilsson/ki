@@ -79,7 +79,7 @@ def test_ensure_gitignore_creates(tmp_path):
     ensure_gitignore(tmp_path)
     gitignore = tmp_path / ".gitignore"
     assert gitignore.exists()
-    assert ".ki/backups" in gitignore.read_text(encoding="utf-8")
+    assert ".ki/" in gitignore.read_text(encoding="utf-8")
 
 
 def test_ensure_gitignore_does_not_overwrite(tmp_path):
@@ -88,7 +88,7 @@ def test_ensure_gitignore_does_not_overwrite(tmp_path):
     ensure_gitignore(tmp_path)
     content = gitignore.read_text(encoding="utf-8")
     assert content.startswith("custom\n")
-    assert ".ki/backups" in content
+    assert ".ki/" in content
 
 
 def test_create_snapshot_commit(tmp_path):

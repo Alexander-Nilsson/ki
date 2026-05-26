@@ -105,7 +105,7 @@ def get_commit_count(repo: Repo) -> int:
 
 def ensure_gitignore(repo_root: Path) -> None:
     gitignore = repo_root / ".gitignore"
-    lines = [".ki/backups", ".ki/meta.json"]
+    lines = [".ki/"]
     existing = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
     new_lines = [l for l in lines if l not in existing]
     if new_lines:
