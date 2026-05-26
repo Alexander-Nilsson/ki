@@ -133,7 +133,8 @@ class SettingsDialog(QDialog):
             elif ago.total_seconds() < 3600:
                 self._status_value.setText(f"{int(ago.total_seconds() // 60)}m ago")
             else:
-                self._status_value.setText(t.strftime("%Y-%m-%d %H:%M"))
+                local_t = t.astimezone()
+                self._status_value.setText(local_t.strftime("%Y-%m-%d %H:%M"))
         else:
             self._status_value.setText("Never synced")
 

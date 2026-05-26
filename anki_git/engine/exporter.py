@@ -1,8 +1,9 @@
 import logging
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from collections.abc import Callable
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from anki.collection import Collection
 
@@ -15,7 +16,7 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     get_commit_count,
 )
-from anki_git.engine import export_helpers, import_helpers
+from anki_git.engine import export_helpers
 from anki_git.formats.notetype_yaml import (
     Notetype,
     write_notetype,
@@ -54,22 +55,43 @@ class ExportResult:
         self.commit_count = commit_count
 
 
-def export_collection(
+@dataclass
+class CapturedExport:
+    """Data read from the Anki collection during the capture phase.
+
+    All note data is serialized to strings so the write phase can run
+    without access to the collection object.
+    """
+    notetypes: Dict[str, Notetype]
+    changed_notetype_names: List[str]
+    nids: Set[int]
+    all_nids: Set[int]
+    note_entries: List[Tuple[int, str, Note]]
+    note_checksums: Dict[str, str]
+    media_filenames: Set[str]
+    collection_path: str
+    last_max_mod: int
+    last_note_count: int
+    col_media_dir: Optional[Path]
+
+
+def _note_file_path(repo_path: Path, note: Note) -> Path:
+    deck_parts = note.deck.split("::")
+    return repo_path / DECKS_DIR / Path(*deck_parts) / f"{note.nid}.md"
+
+
+def capture_export_data(
     col: Collection,
     repo_path: Path,
-    remote_url: str = "",
-    progress_callback: Optional[Callable[[str], None]] = None,
-    media_strategy: str = "none",
     quick: bool = False,
-) -> ExportResult:
-    _start = time.perf_counter()
-    result = ExportResult()
+    media_strategy: str = "none",
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> CapturedExport:
+    """Phase 1: read all export data from the collection.
 
-    if progress_callback:
-        progress_callback("Initializing repository...")
-    repo = get_or_init_repo(repo_path)
-    ensure_gitignore(repo_path)
-
+    Must run while the collection is open.  Can raise RuntimeError if
+    the collection is closed mid-operation.
+    """
     if progress_callback:
         progress_callback("Loading metadata...")
     meta = load_meta(repo_path)
@@ -85,20 +107,16 @@ def export_collection(
         nt = Notetype.from_anki_dict(nt_dict)
         current_notetypes[nt.name] = nt
 
-    changed_notetypes: List[str] = []
-    changed_files: Set[str] = set()
+    changed_notetype_names: List[str] = []
     for name, nt in current_notetypes.items():
-        old = old_notetypes.get(name)
-        if nt != old:
-            changed_notetypes.append(name)
-            write_notetype(notetypes_dir, nt)
-            for p in notetype_paths(notetypes_dir, name):
-                changed_files.add(str(p.relative_to(repo_path)))
+        if nt != old_notetypes.get(name):
+            changed_notetype_names.append(name)
 
     meta_checksums = meta.get("note_checksums", {})
 
     db = col.db
-    assert db is not None
+    if db is None:
+        raise RuntimeError("Collection closed, aborting export")
 
     if quick and meta.get("last_max_mod"):
         if progress_callback:
@@ -110,7 +128,7 @@ def export_collection(
         all_nids = set(db.list("SELECT id FROM notes WHERE id > 0"))
         nids = changed_nids & all_nids
         total = len(nids)
-        _logger.info("Delta export: %d notes changed since mod %s", total, last_max_mod)
+        _logger.info("Delta capture: %d notes changed since mod %s", total, last_max_mod)
     else:
         if progress_callback:
             progress_callback("Reading notes...")
@@ -118,89 +136,152 @@ def export_collection(
         all_nids = nids
         total = len(nids)
 
-    notes_by_deck: Dict[str, List[Note]] = {}
+    note_entries: List[Tuple[int, str, Note]] = []
     note_checksums = dict(meta_checksums)
-    notes_changed = 0
-    media_filenames: set = set()
+    media_filenames: Set[str] = set()
 
     for i, nid in enumerate(sorted(nids)):
+        if col.db is None:
+            _logger.warning("Collection closed mid-capture, aborting after %d/%d", i, total)
+            break
         if progress_callback and i % 20 == 0:
-            progress_callback(f"Processing notes... {i}/{total}")
-        exported = export_helpers.export_single_note(col, repo_path, nid)
-        if exported is None:
+            progress_callback(f"Reading notes... {i}/{total}")
+        captured = export_helpers.capture_single_note(col, nid)
+        if captured is None:
             continue
-        file_path, serialized, note = exported
-
+        serialized, note = captured
         checksum = content_hash(serialized)
         note_checksums[str(nid)] = checksum
-
-        old_checksum = meta_checksums.get(str(nid))
-        if old_checksum != checksum:
-            notes_changed += 1
-            changed_files.add(str(file_path.relative_to(repo_path)))
-
-        deck_name = note.deck
-        if deck_name not in notes_by_deck:
-            notes_by_deck[deck_name] = []
-        notes_by_deck[deck_name].append(note)
-
+        note_entries.append((nid, serialized, note))
         if media_strategy != "none":
             for field_value in note.fields.values():
                 media_filenames.update(get_media_filenames_from_fields(field_value))
 
-    # Remove checksums for deleted notes
+    # Remove checksums for notes deleted from Anki
     for nid_str in list(note_checksums):
         if int(nid_str) not in all_nids:
             del note_checksums[nid_str]
 
-    # Clean up stale repo files for deleted Anki notes
-    if progress_callback:
-        progress_callback("Cleaning up stale files...")
-    cleaned = import_helpers.cleanup_stale_repo_notes(
-        col, repo_path, anki_nids=all_nids,
-    )
-    if cleaned > 0:
-        result.notes_deleted_from_repo = cleaned
-
-    if media_strategy != "none" and media_filenames:
-        if progress_callback:
-            progress_callback("Handling media files...")
+    col_media_dir: Optional[Path] = None
+    if media_strategy != "none":
         col_media_dir = (
             Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
             else Path(col.path).parent / "collection.media"
         )
+
+    last_note_count = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
+    last_max_mod = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+
+    return CapturedExport(
+        notetypes=current_notetypes,
+        changed_notetype_names=changed_notetype_names,
+        nids=nids,
+        all_nids=all_nids,
+        note_entries=note_entries,
+        note_checksums=note_checksums,
+        media_filenames=media_filenames,
+        collection_path=str(col.path),
+        last_max_mod=last_max_mod,
+        last_note_count=last_note_count,
+        col_media_dir=col_media_dir,
+    )
+
+
+def write_export_data(
+    repo_path: Path,
+    captured: CapturedExport,
+    remote_url: str = "",
+    progress_callback: Optional[Callable[[str], None]] = None,
+) -> ExportResult:
+    """Phase 2: write captured export data to disk and git.
+
+    Can run in a background thread — does not touch the Anki collection.
+    """
+    _start = time.perf_counter()
+    result = ExportResult()
+
+    if progress_callback:
+        progress_callback("Initializing repository...")
+    repo = get_or_init_repo(repo_path)
+    ensure_gitignore(repo_path)
+
+    if progress_callback:
+        progress_callback("Loading metadata...")
+    meta = load_meta(repo_path)
+    meta_checksums = meta.get("note_checksums", {})
+
+    notetypes_dir = repo_path / NOTETYPES_DIR
+    changed_files: Set[str] = set()
+
+    if progress_callback:
+        progress_callback("Exporting notetypes...")
+    for name in captured.changed_notetype_names:
+        nt = captured.notetypes[name]
+        write_notetype(notetypes_dir, nt)
+        for p in notetype_paths(notetypes_dir, name):
+            changed_files.add(str(p.relative_to(repo_path)))
+
+    notes_changed = 0
+    deck_counts: Dict[str, int] = {}
+    for nid, serialized, note in captured.note_entries:
+        checksum = captured.note_checksums[str(nid)]
+        old_checksum = meta_checksums.get(str(nid))
+        if old_checksum != checksum:
+            notes_changed += 1
+            file_path = _note_file_path(repo_path, note)
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            file_path.write_text(serialized, encoding="utf-8")
+            changed_files.add(str(file_path.relative_to(repo_path)))
+        deck_counts[note.deck] = deck_counts.get(note.deck, 0) + 1
+
+    if progress_callback:
+        progress_callback("Cleaning up stale files...")
+    cleaned = 0
+    for notes_file in sorted((repo_path / DECKS_DIR).rglob("*.md")):
+        from anki_git.formats.notes_md import parse_note_section
+        text = notes_file.read_text(encoding="utf-8")
+        note_data = parse_note_section(text)
+        if note_data is not None and note_data.nid not in captured.all_nids:
+            try:
+                notes_file.unlink()
+                cleaned += 1
+                changed_files.add(str(notes_file.relative_to(repo_path)))
+            except Exception as e:
+                _logger.warning("Failed to delete stale note file %s: %s", notes_file, e)
+    if cleaned > 0:
+        result.notes_deleted_from_repo = cleaned
+
+    if captured.col_media_dir is not None and captured.media_filenames:
+        if progress_callback:
+            progress_callback("Handling media files...")
         repo_media_dir = repo_path / "media"
-        strategy = MediaStrategy(media_strategy)
-        handle_media(col_media_dir, repo_media_dir, strategy, media_filenames)
+        strategy = MediaStrategy("mirror")
+        handle_media(captured.col_media_dir, repo_media_dir, strategy, captured.media_filenames)
 
     result.notes_changed = notes_changed
-    result.notetypes_changed = len(changed_notetypes)
-    result.changed_notetypes = changed_notetypes
-    result.changed_decks = {d: len(ns) for d, ns in notes_by_deck.items()}
+    result.notetypes_changed = len(captured.changed_notetype_names)
+    result.changed_notetypes = list(captured.changed_notetype_names)
+    result.changed_decks = deck_counts
 
     if notes_changed > 0 or result.notetypes_changed > 0 or cleaned > 0:
         if progress_callback:
             progress_callback("Committing changes...")
         meta["last_export_time"] = int(time.time())
-        meta["note_checksums"] = note_checksums
-        meta["collection_path"] = str(col.path)
+        meta["note_checksums"] = captured.note_checksums
+        meta["collection_path"] = captured.collection_path
         save_meta(repo_path, meta)
-
         changed_files.add(
             str((repo_path / META_DIR / "meta.json").relative_to(repo_path))
         )
-
         stage_files(repo, list(changed_files))
         create_snapshot_commit(repo, list(changed_files))
-
         if remote_url:
             if progress_callback:
                 progress_callback("Pushing to remote...")
             push_to_remote(repo, remote_url)
 
-    # Store tracking data for quick_has_changes()
-    meta["last_note_count"] = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
-    meta["last_max_mod"] = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
+    meta["last_note_count"] = captured.last_note_count
+    meta["last_max_mod"] = captured.last_max_mod
     meta["last_commit_sha"] = str(repo.head.commit)
     save_meta(repo_path, meta)
 
@@ -218,3 +299,30 @@ def export_collection(
         )
 
     return result
+
+
+def export_collection(
+    col: Collection,
+    repo_path: Path,
+    remote_url: str = "",
+    progress_callback: Optional[Callable[[str], None]] = None,
+    media_strategy: str = "none",
+    quick: bool = False,
+) -> ExportResult:
+    """Full export: capture data from collection then write to disk+git.
+
+    Runs both phases synchronously with progress.  For non-blocking close
+    behaviour use capture_export_data() directly followed by a background
+    call to write_export_data().
+    """
+    captured = capture_export_data(
+        col, repo_path,
+        quick=quick,
+        media_strategy=media_strategy,
+        progress_callback=progress_callback,
+    )
+    return write_export_data(
+        repo_path, captured,
+        remote_url=remote_url,
+        progress_callback=progress_callback,
+    )

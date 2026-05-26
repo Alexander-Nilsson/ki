@@ -22,13 +22,17 @@ _logger = logging.getLogger("anki_git")
 DECKS_DIR = "decks"
 
 
-def export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[Tuple[Path, str, Note]]:
-    """Export a single note from Anki into repo files.
+def capture_single_note(col: Collection, nid: int) -> Optional[Tuple[str, Note]]:
+    """Read and serialize a single note from the collection, without writing to disk.
 
-    Returns (file_path, serialized_content, Note) on success, None on failure.
-    The caller is responsible for checksum comparison if needed.
+    Returns (serialized_content, Note) on success, None on failure.
+    The caller is responsible for checksum comparison and file writing.
+    Raises RuntimeError if the collection is closed.
     """
-    from anki_git.formats.notes_md import Note, write_note_file
+    from anki_git.formats.notes_md import Note
+
+    if col.db is None:
+        raise RuntimeError("Collection closed, aborting export")
 
     try:
         note_obj = col.get_note(NoteId(nid))
@@ -60,7 +64,22 @@ def export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[T
         fields=fields,
     )
     serialized = note.serialize()
-    deck_path_parts = deck_name.split("::")
+    return serialized, note
+
+
+def export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[Tuple[Path, str, Note]]:
+    """Export a single note from Anki into repo files.
+
+    Returns (file_path, serialized_content, Note) on success, None on failure.
+    The caller is responsible for checksum comparison if needed.
+    """
+    from anki_git.formats.notes_md import write_note_file
+
+    captured = capture_single_note(col, nid)
+    if captured is None:
+        return None
+    serialized, note = captured
+    deck_path_parts = note.deck.split("::")
     note_dir = repo_path / DECKS_DIR / Path(*deck_path_parts)
     path = write_note_file(note_dir, note, content=serialized)
     return path, serialized, note

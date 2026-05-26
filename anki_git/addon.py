@@ -3,7 +3,7 @@ import logging
 from pathlib import Path
 
 from anki_git.config import KiSyncConfig
-from anki_git.engine.exporter import export_collection
+from anki_git.engine.exporter import CapturedExport, export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
 
 
@@ -601,49 +601,94 @@ def on_profile_open() -> None:
         _run_startup_import(config)
 
 
+def _push_background(repo_path: Path, remote_url: str) -> None:
+    """Push to remote in a daemon thread — can be killed without data loss."""
+    from anki_git.engine.git_ops import open_repo, push_to_remote
+    try:
+        repo = open_repo(repo_path)
+        if repo is not None:
+            push_to_remote(repo, remote_url)
+            _logger.info("Background push completed")
+    except Exception:
+        _logger.exception("Background push failed")
+
+
 def on_profile_close() -> None:
     config = load_config()
-    if config.auto_snapshot_on_close and config.repo_path:
-        from aqt import mw
-        if mw is None or mw.col is None:
+    if not config.auto_snapshot_on_close or not config.repo_path:
+        return
+    from aqt import mw
+    if mw is None or mw.col is None:
+        return
+    repo_path = Path(config.repo_path)
+    if not (repo_path / ".git").exists():
+        return
+
+    if mw.col.db is None:
+        _logger.warning("Collection already closed, skipping auto-export")
+        return
+
+    from anki_git.engine.checksums import quick_has_changes
+    try:
+        result = quick_has_changes(mw.col, repo_path)
+        if result is False:
+            _logger.info("No changes detected, skipping auto-export")
             return
-        repo_path = Path(config.repo_path)
-        if not (repo_path / ".git").exists():
+    except Exception:
+        _logger.warning("quick_has_changes failed on close", exc_info=True)
+
+    remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
+
+    # Phase 1 — capture data from collection (synchronous, needs col open)
+    from anki_git.engine.exporter import capture_export_data
+    try:
+        captured = capture_export_data(
+            mw.col, repo_path,
+            quick=True,
+            media_strategy=config.media_strategy,
+        )
+    except Exception as e:
+        _logger.warning("Failed to capture export data on close: %s", e)
+        return
+
+    if not captured.note_entries and not captured.changed_notetype_names:
+        _logger.info("No changes captured, skipping write")
+        return
+
+    # Phase 2 — write files + git commit (synchronous, fast for delta).
+    # No push here — that happens in phase 3.
+    from anki_git.engine.exporter import write_export_data
+    _logger.info(
+        "Auto-export on close: writing %d notes, %d notetypes",
+        len(captured.note_entries),
+        len(captured.changed_notetype_names),
+    )
+    try:
+        result = write_export_data(
+            repo_path, captured,
+            remote_url="",
+        )
+        if result.error:
+            _logger.warning("Write on close failed: %s", result.error)
             return
+        _logger.info(
+            "Write on close: %d notes, %d notetypes committed",
+            result.notes_changed,
+            result.notetypes_changed,
+        )
+    except Exception as e:
+        _logger.warning("Write on close crashed: %s", e)
+        return
 
-        from anki_git.engine.checksums import quick_has_changes
-        try:
-            result = quick_has_changes(mw.col, repo_path)
-            if result is False:
-                _logger.info("No changes detected, skipping auto-export")
-                return
-        except Exception:
-            _logger.warning("quick_has_changes failed on close", exc_info=True)
-
-        remote_url = _get_remote_url(repo_path, config.auto_push_after_snapshot)
-
-        if config.background_mode:
-            _run_background_export(config, quick=True)
-        else:
-            try:
-                mw.progress.start(
-                    label="Auto-syncing changes...", immediate=True
-                )
-                try:
-                    export_collection(
-                        mw.col, repo_path,
-                        remote_url=remote_url,
-                        media_strategy=config.media_strategy,
-                        progress_callback=lambda text: (
-                            mw.progress.update(label=text),
-                            mw.app.processEvents()
-                        ) and None,
-                        quick=True,
-                    )
-                finally:
-                    mw.progress.finish()
-            except Exception as e:
-                _logger.warning("Auto-snapshot on close failed: %s", e)
+    # Phase 3 — push to remote in a daemon thread (can be killed safely).
+    if remote_url:
+        import threading
+        thread = threading.Thread(
+            target=_push_background,
+            args=(repo_path, remote_url),
+            daemon=True,
+        )
+        thread.start()
 
 
 def init_addon() -> None:
