@@ -272,6 +272,35 @@ def import_action() -> None:
         if not diff_dialog.exec():
             return
 
+        selected_nids = diff_dialog.get_checked_nids()
+        selected_notetypes = diff_dialog.get_checked_notetypes()
+
+        if not selected_nids and not selected_notetypes:
+            QMessageBox.information(
+                mw, "AnkiGit",
+                "No items selected. Nothing to import."
+            )
+            return
+
+        # Auto-include notetypes referenced by selected notes
+        for note in data.repo_notes.values():
+            if str(note.nid) in selected_nids and note.notetype not in selected_notetypes:
+                selected_notetypes.add(note.notetype)
+
+        # Filter all pre-computed data to only include selected items
+        data.anki_checksums = {
+            k: v for k, v in data.anki_checksums.items() if k in selected_nids
+        }
+        data.git_checksums = {
+            k: v for k, v in data.git_checksums.items() if k in selected_nids
+        }
+        data.repo_notes = {
+            k: v for k, v in data.repo_notes.items() if str(k) in selected_nids
+        }
+        data.repo_notetypes = {
+            k: v for k, v in data.repo_notetypes.items() if k in selected_notetypes
+        }
+
         def do_import(col):
             col_path = Path(col.path)
             backup_path = (

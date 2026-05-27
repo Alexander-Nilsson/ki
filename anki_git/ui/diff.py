@@ -1,6 +1,6 @@
 import difflib
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 
 from aqt.qt import (
     QDialog,
@@ -263,6 +263,11 @@ class DiffDialog(QDialog):
         stats_label.setObjectName("statsLabel")
         toolbar_layout.addWidget(stats_label)
 
+        self.select_all_btn = QPushButton("Deselect All")
+        self.select_all_btn.setObjectName("selectAllBtn")
+        self.select_all_btn.clicked.connect(self._toggle_select_all)
+        toolbar_layout.addWidget(self.select_all_btn)
+
         def add_dot_stat(color, count):
             dot = QLabel("\u25cf")
             dot.setStyleSheet(f"color: {color}; margin-left: 10px;")
@@ -373,6 +378,7 @@ class DiffDialog(QDialog):
             #changeCounts {{ font-weight: bold; }}
             #diffBrowser {{ border: none; background-color: {bg_color}; }}
             #statsLabel {{ font-weight: bold; }}
+            #selectAllBtn {{ background-color: transparent; border: 1px solid {border_color}; padding: 4px 12px; border-radius: 4px; color: {text_color}; margin-left: 10px; }}
             #discardBtn {{ background-color: transparent; border: 1px solid {border_color}; padding: 4px 12px; border-radius: 4px; color: {text_color}; }}
             #commitBtn {{ background-color: #3498db; color: white; border: none; padding: 4px 12px; border-radius: 4px; font-weight: bold; }}
             #commitBtn:hover {{ background-color: #2980b9; }}
@@ -394,6 +400,32 @@ class DiffDialog(QDialog):
         doc = self.diff_browser.document()
         if doc is not None:
             doc.setDefaultStyleSheet(diff_qss)
+
+    def _toggle_select_all(self):
+        any_unchecked = any(
+            item.checkState(0) != Qt.CheckState.Checked
+            for item, _ in self._tree_items
+        )
+        new_state = Qt.CheckState.Checked if any_unchecked else Qt.CheckState.Unchecked
+        for item, _ in self._tree_items:
+            item.setCheckState(0, new_state)
+        self.select_all_btn.setText(
+            "Deselect All" if new_state == Qt.CheckState.Checked else "Select All"
+        )
+
+    def get_checked_nids(self) -> Set[str]:
+        result: Set[str] = set()
+        for item, data in self._tree_items:
+            if data["type"] == "note" and item.checkState(0) == Qt.CheckState.Checked:
+                result.add(data["id"])
+        return result
+
+    def get_checked_notetypes(self) -> Set[str]:
+        result: Set[str] = set()
+        for item, data in self._tree_items:
+            if data["type"] == "template" and item.checkState(0) == Qt.CheckState.Checked:
+                result.add(data["id"])
+        return result
 
     def _populate_tree(self):
         notes = [d for d in self.diff_data if d["type"] == "note"]
@@ -417,6 +449,8 @@ class DiffDialog(QDialog):
                 leaf = QTreeWidgetItem(nt_root, [label])
                 leaf.setData(0, Qt.ItemDataRole.UserRole, item)
                 leaf.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+                leaf.setFlags(leaf.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                leaf.setCheckState(0, Qt.CheckState.Checked)
                 self._tree_items.append((leaf, item))
 
         if self._tree_items:
@@ -444,6 +478,8 @@ class DiffDialog(QDialog):
                     leaf = QTreeWidgetItem(item, [n_label])
                     leaf.setData(0, Qt.ItemDataRole.UserRole, note_item)
                     leaf.setData(0, Qt.ItemDataRole.UserRole + 1, True)
+                    leaf.setFlags(leaf.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    leaf.setCheckState(0, Qt.CheckState.Checked)
                     self._tree_items.append((leaf, note_item))
 
         add_children(tree, parent)
