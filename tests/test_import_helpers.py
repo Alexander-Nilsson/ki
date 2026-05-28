@@ -4,8 +4,8 @@ import pytest
 
 from anki_git.engine.import_helpers import (
     compute_git_checksums,
-    load_all_repo_notes,
     delete_note_from_repo,
+    load_all_repo_notes,
 )
 
 

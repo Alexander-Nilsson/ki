@@ -2,16 +2,15 @@
 
 import difflib
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Set, Tuple
 
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
-
-_logger = logging.getLogger("anki_git")
-
+from anki_git.engine.constants import DECKS_DIR, NOTETYPES_DIR
 from anki_git.formats.notes_md import Note, parse_notes_file
 from anki_git.formats.notetype_yaml import Notetype
+
+_logger = logging.getLogger("anki_git")
 
 
 @dataclass
@@ -19,7 +18,7 @@ class FieldDiff:
     field_name: str
     old_value: str
     new_value: str
-    diff_lines: List[str] = field(default_factory=list)
+    diff_lines: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -28,12 +27,12 @@ class NoteDiff:
     deck: str
     notetype: str
     change_type: str  # "modified", "added", "deleted"
-    field_diffs: List[FieldDiff] = field(default_factory=list)
-    old_tags: List[str] = field(default_factory=list)
-    new_tags: List[str] = field(default_factory=list)
+    field_diffs: list[FieldDiff] = field(default_factory=list)
+    old_tags: list[str] = field(default_factory=list)
+    new_tags: list[str] = field(default_factory=list)
     tags_changed: bool = False
-    old_deck: Optional[str] = None
-    old_notetype: Optional[str] = None
+    old_deck: str | None = None
+    old_notetype: str | None = None
 
     @property
     def deck_changed(self) -> bool:
@@ -73,15 +72,15 @@ class ComponentChange:
 class NotetypeDiff:
     name: str
     change_type: str  # "modified", "added", "deleted"
-    component_changes: List[ComponentChange] = field(default_factory=list)
+    component_changes: list[ComponentChange] = field(default_factory=list)
     fields_diff: str = ""
     css_diff: str = ""
 
 
 @dataclass
 class DiffReport:
-    note_diffs: List[NoteDiff] = field(default_factory=list)
-    notetype_diffs: List[NotetypeDiff] = field(default_factory=list)
+    note_diffs: list[NoteDiff] = field(default_factory=list)
+    notetype_diffs: list[NotetypeDiff] = field(default_factory=list)
 
     @property
     def total_changes(self) -> int:
@@ -100,11 +99,11 @@ class ImportDiffData:
     the diff phase and passed to pull_from_repo() to avoid re-scanning.
     """
     report: DiffReport
-    anki_notes: Dict[int, Note] = field(default_factory=dict)
-    repo_notes: Dict[int, Note] = field(default_factory=dict)
-    repo_notetypes: Dict[str, Notetype] = field(default_factory=dict)
-    anki_checksums: Dict[str, str] = field(default_factory=dict)
-    git_checksums: Dict[str, str] = field(default_factory=dict)
+    anki_notes: dict[int, Note] = field(default_factory=dict)
+    repo_notes: dict[int, Note] = field(default_factory=dict)
+    repo_notetypes: dict[str, Notetype] = field(default_factory=dict)
+    anki_checksums: dict[str, str] = field(default_factory=dict)
+    git_checksums: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -115,20 +114,20 @@ class ExportDiffData:
     the diff phase and passed to export_collection() to avoid re-scanning.
     """
     report: DiffReport
-    note_entries: Dict[int, Tuple[int, str, "Note"]] = field(default_factory=dict)
-    note_checksums: Dict[str, str] = field(default_factory=dict)
-    all_nids: Set[int] = field(default_factory=set)
-    changed_notetype_names: List[str] = field(default_factory=list)
-    notetypes: Dict[str, Notetype] = field(default_factory=dict)
-    media_filenames: Set[str] = field(default_factory=set)
+    note_entries: dict[int, tuple[int, str, "Note"]] = field(default_factory=dict)
+    note_checksums: dict[str, str] = field(default_factory=dict)
+    all_nids: set[int] = field(default_factory=set)
+    changed_notetype_names: list[str] = field(default_factory=list)
+    notetypes: dict[str, Notetype] = field(default_factory=dict)
+    media_filenames: set[str] = field(default_factory=set)
     collection_path: str = ""
     last_max_mod: int = 0
     last_note_count: int = 0
-    col_media_dir: Optional[Path] = None
+    col_media_dir: Path | None = None
     media_strategy: str = "none"
 
 
-def _unified_diff(old: str, new: str, name: str) -> List[str]:
+def _unified_diff(old: str, new: str, name: str) -> list[str]:
     return list(
         difflib.unified_diff(
             old.splitlines(keepends=True),
@@ -140,7 +139,7 @@ def _unified_diff(old: str, new: str, name: str) -> List[str]:
     )
 
 
-def compute_note_diff(old_note: Optional[Note], new_note: Optional[Note]) -> NoteDiff:
+def compute_note_diff(old_note: Note | None, new_note: Note | None) -> NoteDiff:
     if old_note is None:
         assert new_note is not None
         return NoteDiff(
@@ -179,7 +178,7 @@ def compute_note_diff(old_note: Optional[Note], new_note: Optional[Note]) -> Not
             old_tags=old_note.tags,
         )
 
-    field_diffs: List[FieldDiff] = []
+    field_diffs: list[FieldDiff] = []
     all_field_names = list(dict.fromkeys(list(old_note.fields.keys()) + list(new_note.fields.keys())))
 
     for fname in all_field_names:
@@ -230,7 +229,7 @@ def _notetype_to_canonical(nt) -> dict:
     }
 
 
-def _diff_field_lists(old_fields, new_fields) -> List[ComponentChange]:
+def _diff_field_lists(old_fields, new_fields) -> list[ComponentChange]:
     changes = []
     old_by_name = {f.name: f for f in old_fields}
     new_by_name = {f.name: f for f in new_fields}
@@ -259,7 +258,7 @@ def _diff_field_lists(old_fields, new_fields) -> List[ComponentChange]:
     return changes
 
 
-def _diff_template_lists(old_tmpls, new_tmpls) -> List[ComponentChange]:
+def _diff_template_lists(old_tmpls, new_tmpls) -> list[ComponentChange]:
     changes = []
     old_by_name = {t.name: t for t in old_tmpls}
     new_by_name = {t.name: t for t in new_tmpls}
@@ -283,8 +282,8 @@ def _diff_template_lists(old_tmpls, new_tmpls) -> List[ComponentChange]:
 
 
 def compute_notetype_diff(
-    old_nt: Optional[Notetype], new_nt: Optional[Notetype]
-) -> Optional[NotetypeDiff]:
+    old_nt: Notetype | None, new_nt: Notetype | None
+) -> NotetypeDiff | None:
     if old_nt is None:
         assert new_nt is not None
         return NotetypeDiff(
@@ -307,7 +306,7 @@ def compute_notetype_diff(
             fields_diff="(deleted notetype)",
         )
 
-    changes: List[ComponentChange] = []
+    changes: list[ComponentChange] = []
     has_diff = False
 
     # Compare fields
@@ -357,7 +356,7 @@ def compute_notetype_diff(
     )
 
 
-def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callable] = None) -> DiffReport:
+def compute_export_diff(col, repo_path: Path, progress_callback: Callable | None = None) -> DiffReport:
     """Compare current Anki collection vs repo state for export preview."""
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
@@ -370,7 +369,7 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
     decks_dir = repo_path / DECKS_DIR
 
     old_notetypes = _read_nt(notetypes_dir)
-    current_notetypes: Dict[str, Notetype] = {}
+    current_notetypes: dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
         current_notetypes[nt.name] = nt
@@ -385,7 +384,7 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
 
     nids = col.db.list("SELECT id FROM notes WHERE id > 0")
     total = len(nids)
-    repo_notes_by_id: Dict[int, Note] = {}
+    repo_notes_by_id: dict[int, Note] = {}
     if decks_dir.exists():
         files = list(decks_dir.rglob("*.md"))
         for i, notes_file in enumerate(files):
@@ -430,12 +429,12 @@ def compute_export_diff(col, repo_path: Path, progress_callback: Optional[Callab
 
 
 def compute_import_diff(col, repo_path: Path,
-                        progress_callback: Optional[Callable] = None,
-                        anki_notes: Optional[Dict[int, Note]] = None,
-                        repo_notes: Optional[Dict[int, Note]] = None,
-                        repo_notetypes: Optional[Dict[str, Notetype]] = None,
-                        anki_checksums: Optional[Dict[str, str]] = None,
-                        git_checksums: Optional[Dict[str, str]] = None) -> ImportDiffData:
+                        progress_callback: Callable | None = None,
+                        anki_notes: dict[int, Note] | None = None,
+                        repo_notes: dict[int, Note] | None = None,
+                        repo_notetypes: dict[str, Notetype] | None = None,
+                        anki_checksums: dict[str, str] | None = None,
+                        git_checksums: dict[str, str] | None = None) -> ImportDiffData:
     """Compare repo state vs current Anki collection for import preview.
 
     If anki_notes / repo_notes / repo_notetypes / checksums are provided,
@@ -443,8 +442,8 @@ def compute_import_diff(col, repo_path: Path,
     data directly.  This enables the delta-import flow where the diff phase
     feeds pre-scanned data into the import phase.
     """
-    from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
     from anki_git.engine.checksums import content_hash
+    from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
     report = DiffReport()
 
@@ -454,7 +453,7 @@ def compute_import_diff(col, repo_path: Path,
     if repo_notetypes is None:
         notetypes_dir = repo_path / NOTETYPES_DIR
         repo_notetypes = _read_nt(notetypes_dir)
-    col_notetypes: Dict[str, Notetype] = {}
+    col_notetypes: dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
         col_notetypes[nt.name] = nt
@@ -510,7 +509,7 @@ def compute_import_diff(col, repo_path: Path,
         git_checksums = {str(nid): content_hash(n.serialize()) for nid, n in repo_notes.items()}
 
     # Diff each pair
-    seen_ids: Set[int] = set()
+    seen_ids: set[int] = set()
     for nid, repo_note in repo_notes.items():
         seen_ids.add(nid)
         col_note = anki_notes.get(nid)
@@ -533,7 +532,7 @@ def compute_import_diff(col, repo_path: Path,
     )
 
 
-def _nid_from_deleted_path(path: Path) -> Optional[int]:
+def _nid_from_deleted_path(path: Path) -> int | None:
     """Extract nid from a deleted decks/<deck>/<nid>.md path."""
     if path.suffix != ".md":
         return None
@@ -544,7 +543,7 @@ def _nid_from_deleted_path(path: Path) -> Optional[int]:
 
 
 def compute_import_diff_delta(col, repo_path: Path,
-                              progress_callback: Optional[Callable] = None) -> ImportDiffData:
+                              progress_callback: Callable | None = None) -> ImportDiffData:
     """Delta-based import diff using git to find only changed files.
 
     Uses git status/diff to identify only the files that have actually
@@ -554,7 +553,7 @@ def compute_import_diff_delta(col, repo_path: Path,
     Falls back to the full scan if no last_commit_sha baseline exists
     (first run) or if there are too many changed files (heuristic).
     """
-    from anki_git.engine.checksums import load_meta, content_hash
+    from anki_git.engine.checksums import content_hash, load_meta
     from anki_git.engine.git_ops import get_changed_repo_files
 
     meta = load_meta(repo_path)
@@ -579,9 +578,9 @@ def compute_import_diff_delta(col, repo_path: Path,
         progress_callback(f"Reading {len(changed)} changed files...")
 
     # Parse only changed repo files
-    repo_notes: Dict[int, Note] = {}
+    repo_notes: dict[int, Note] = {}
     for p in sorted(changed):
-        if p.suffix != ".md" or not p.parts[:1] == ("decks",):
+        if p.suffix != ".md" or p.parts[:1] != ("decks",):
             continue
         file_path = repo_path / p
         if file_path.exists():
@@ -589,38 +588,38 @@ def compute_import_diff_delta(col, repo_path: Path,
                 repo_notes[rn.nid] = rn
 
     # Extract nids from deleted files
-    deleted_nids: Set[int] = set()
+    deleted_nids: set[int] = set()
     for p in deleted:
         nid = _nid_from_deleted_path(p)
         if nid is not None:
             deleted_nids.add(nid)
 
     # Also scan for notetypes that changed
-    changed_notetype_names: Set[str] = set()
+    changed_notetype_names: set[str] = set()
     for p in list(changed) + list(deleted):
         if p.suffix in (".yaml", ".yml", ".css") and p.parts[:1] == ("notetypes",):
             changed_notetype_names.add(p.stem)
 
     # Read all notetypes if any changed (they're small anyway)
-    repo_notetypes: Dict[str, Notetype] = {}
+    repo_notetypes: dict[str, Notetype] = {}
     if changed_notetype_names:
         from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
         repo_notetypes = _read_nt(repo_path / NOTETYPES_DIR)
 
     # Build set of nids we need to look up in Anki
-    affected_nids: Set[int] = set(repo_notes.keys()) | deleted_nids
+    affected_nids: set[int] = set(repo_notes.keys()) | deleted_nids
 
     # Fetch only the affected Anki notes + any notes modified in Anki since
     # last sync (they might have conflicts with unchanged repo files)
     if progress_callback:
         progress_callback(f"Checking {len(affected_nids)} affected notes...")
 
-    anki_notes: Dict[int, Note] = {}
+    anki_notes: dict[int, Note] = {}
     db = col.db
     assert db is not None
 
     # Query affected nids individually — still much cheaper than scanning ALL
-    col_nid_set: Set[int] = set()
+    col_nid_set: set[int] = set()
     for row in db.list("SELECT id FROM notes WHERE id > 0"):
         col_nid_set.add(row)
 
@@ -676,10 +675,10 @@ def compute_import_diff_delta(col, repo_path: Path,
 
     # Build partial checksums, filling in from base for unchanged notes
     base_checksums = meta.get("note_checksums", {})
-    partial_anki: Dict[str, str] = {
+    partial_anki: dict[str, str] = {
         str(nid): content_hash(n.serialize()) for nid, n in anki_notes.items()
     }
-    partial_git: Dict[str, str] = {
+    partial_git: dict[str, str] = {
         str(nid): content_hash(n.serialize()) for nid, n in repo_notes.items()
     }
 
@@ -703,7 +702,7 @@ def compute_import_diff_delta(col, repo_path: Path,
     )
 
 
-def _nid_from_filename(path: Path) -> Optional[int]:
+def _nid_from_filename(path: Path) -> int | None:
     """Extract nid from a decks/<deck>/<nid>.md path."""
     if path.suffix != ".md":
         return None
@@ -714,8 +713,8 @@ def _nid_from_filename(path: Path) -> Optional[int]:
 
 
 def _build_notetype_diff_report(
-    old_notetypes: Dict[str, Notetype],
-    current_notetypes: Dict[str, Notetype],
+    old_notetypes: dict[str, Notetype],
+    current_notetypes: dict[str, Notetype],
     report: DiffReport,
 ) -> None:
     """Populate report.notetype_diffs from old and current notetypes."""
@@ -729,12 +728,12 @@ def _build_notetype_diff_report(
 
 
 def _build_note_diff_report(
-    repo_notes: Dict[int, Note],
-    anki_notes: Dict[int, Note],
+    repo_notes: dict[int, Note],
+    anki_notes: dict[int, Note],
     report: DiffReport,
 ) -> None:
     """Populate report.note_diffs from repo and anki note dicts."""
-    seen_ids: Set[int] = set()
+    seen_ids: set[int] = set()
     for nid, repo_note in repo_notes.items():
         seen_ids.add(nid)
         anki_note = anki_notes.get(nid)
@@ -758,11 +757,11 @@ def _build_note_diff_report(
 def _full_export_diff_scan(
     col,
     repo_path: Path,
-    old_notetypes: Dict[str, Notetype],
-    current_notetypes: Dict[str, Notetype],
-    changed_notetype_names: List[str],
+    old_notetypes: dict[str, Notetype],
+    current_notetypes: dict[str, Notetype],
+    changed_notetype_names: list[str],
     media_strategy: str,
-    progress_callback: Optional[Callable] = None,
+    progress_callback: Callable | None = None,
 ) -> ExportDiffData:
     """Full export scan: read all notes and all .md files.
 
@@ -777,7 +776,7 @@ def _full_export_diff_scan(
     decks_dir = repo_path / DECKS_DIR
 
     # Read all repo .md files
-    repo_notes: Dict[int, Note] = {}
+    repo_notes: dict[int, Note] = {}
     if decks_dir.exists():
         files = list(decks_dir.rglob("*.md"))
         for f in files:
@@ -787,10 +786,10 @@ def _full_export_diff_scan(
     nids = col.db.list("SELECT id FROM notes WHERE id > 0")
     total = len(nids)
 
-    anki_notes: Dict[int, Note] = {}
-    note_entries: Dict[int, Tuple[int, str, Note]] = {}
-    note_checksums: Dict[str, str] = {}
-    media_filenames: Set[str] = set()
+    anki_notes: dict[int, Note] = {}
+    note_entries: dict[int, tuple[int, str, Note]] = {}
+    note_checksums: dict[str, str] = {}
+    media_filenames: set[str] = set()
 
     for i, nid in enumerate(nids):
         if progress_callback and i % 20 == 0:
@@ -813,7 +812,7 @@ def _full_export_diff_scan(
     _build_note_diff_report(repo_notes, anki_notes, report)
 
     db = col.db
-    col_media_dir: Optional[Path] = None
+    col_media_dir: Path | None = None
     if media_strategy != "none":
         col_media_dir = (
             Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
@@ -840,7 +839,7 @@ def compute_export_diff_delta(
     col,
     repo_path: Path,
     media_strategy: str = "none",
-    progress_callback: Optional[Callable] = None,
+    progress_callback: Callable | None = None,
 ) -> ExportDiffData:
     """Delta-based export diff using mod timestamps and git to find only changed notes.
 
@@ -849,11 +848,11 @@ def compute_export_diff_delta(
 
     Falls back to full scan if no baseline exists (first run).
     """
-    from anki_git.engine.checksums import load_meta, content_hash
-    from anki_git.engine.git_ops import get_changed_repo_files
+    from anki_git.engine.checksums import content_hash, load_meta
     from anki_git.engine.export_helpers import capture_single_note
-    from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
+    from anki_git.engine.git_ops import get_changed_repo_files
     from anki_git.formats.media import get_media_filenames_from_fields
+    from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
     meta = load_meta(repo_path)
     last_commit_sha = meta.get("last_commit_sha")
@@ -865,12 +864,12 @@ def compute_export_diff_delta(
 
     notetypes_dir = repo_path / NOTETYPES_DIR
     old_notetypes = _read_nt(notetypes_dir)
-    current_notetypes: Dict[str, Notetype] = {}
+    current_notetypes: dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
         current_notetypes[nt.name] = nt
 
-    changed_notetype_names: List[str] = []
+    changed_notetype_names: list[str] = []
     for name, nt in current_notetypes.items():
         if nt != old_notetypes.get(name):
             changed_notetype_names.append(name)
@@ -887,10 +886,10 @@ def compute_export_diff_delta(
         progress_callback("Checking for changes...")
 
     db = col.db
-    all_nids: Set[int] = set(db.list("SELECT id FROM notes WHERE id > 0"))
+    all_nids: set[int] = set(db.list("SELECT id FROM notes WHERE id > 0"))
 
     # Notes changed in Anki since last export
-    changed_anki_nids: Set[int] = set()
+    changed_anki_nids: set[int] = set()
     if last_max_mod:
         try:
             changed_anki_nids = set(
@@ -900,20 +899,20 @@ def compute_export_diff_delta(
             _logger.warning("Failed to query changed notes by mod", exc_info=True)
 
     # Notes deleted from Anki (in meta checksums but gone from collection)
-    deleted_anki_nids: Set[int] = set()
+    deleted_anki_nids: set[int] = set()
     for nid_str in meta_checksums:
         if int(nid_str) not in all_nids:
             deleted_anki_nids.add(int(nid_str))
 
     # Notes with changed repo files
     changed_repo_files, deleted_repo_files = get_changed_repo_files(repo_path, last_commit_sha)
-    changed_repo_nids: Set[int] = set()
+    changed_repo_nids: set[int] = set()
     for p in list(changed_repo_files) + list(deleted_repo_files):
         nid = _nid_from_filename(p)
         if nid is not None:
             changed_repo_nids.add(nid)
 
-    affected_nids: Set[int] = changed_anki_nids | deleted_anki_nids | changed_repo_nids
+    affected_nids: set[int] = changed_anki_nids | deleted_anki_nids | changed_repo_nids
 
     if not affected_nids and not changed_notetype_names:
         _logger.info("No changed notes or notetypes detected")
@@ -931,7 +930,7 @@ def compute_export_diff_delta(
 
     # Build path lookup using rglob (fast — lists paths, doesn't read contents)
     decks_dir = repo_path / DECKS_DIR
-    nid_to_path: Dict[int, Path] = {}
+    nid_to_path: dict[int, Path] = {}
     if decks_dir.exists():
         for p in decks_dir.rglob("*.md"):
             nid = _nid_from_filename(p)
@@ -939,7 +938,7 @@ def compute_export_diff_delta(
                 nid_to_path[nid] = p
 
     # Parse repo notes for affected nids
-    repo_notes: Dict[int, Note] = {}
+    repo_notes: dict[int, Note] = {}
     for nid in affected_nids:
         path = nid_to_path.get(nid)
         if path is not None and path.exists():
@@ -947,10 +946,10 @@ def compute_export_diff_delta(
                 repo_notes[rn.nid] = rn
 
     # Fetch and serialize Anki notes for affected nids
-    anki_notes: Dict[int, Note] = {}
-    note_entries: Dict[int, Tuple[int, str, Note]] = {}
-    note_checksums: Dict[str, str] = {}
-    media_filenames: Set[str] = set()
+    anki_notes: dict[int, Note] = {}
+    note_entries: dict[int, tuple[int, str, Note]] = {}
+    note_checksums: dict[str, str] = {}
+    media_filenames: set[str] = set()
 
     for nid in sorted(affected_nids):
         if nid not in all_nids:
@@ -981,7 +980,7 @@ def compute_export_diff_delta(
         if int(nid_str) not in all_nids:
             del merged_checksums[nid_str]
 
-    col_media_dir: Optional[Path] = None
+    col_media_dir: Path | None = None
     if media_strategy != "none":
         col_media_dir = (
             Path(col.media.dir()) if hasattr(col, "media") and col.media is not None

@@ -1,5 +1,5 @@
 """Tests for config module."""
-from anki_git.config import KiSyncConfig, SyncMode, SYNC_MODE_CHOICES
+from anki_git.config import SYNC_MODE_CHOICES, AnkiGitConfig, SyncMode
 
 
 class TestSyncMode:
@@ -24,9 +24,9 @@ class TestSyncMode:
         assert len(set(values)) == 4
 
 
-class TestKiSyncConfig:
+class TestAnkiGitConfig:
     def test_defaults(self):
-        cfg = KiSyncConfig()
+        cfg = AnkiGitConfig()
         assert cfg.repo_path == ""
         assert cfg.auto_sync_on_startup is True
         assert cfg.auto_snapshot_on_close is True
@@ -35,7 +35,7 @@ class TestKiSyncConfig:
         assert cfg.sync_mode == SyncMode.ALWAYS_ASK
 
     def test_from_dict_filters_invalid_keys(self):
-        cfg = KiSyncConfig.from_dict({
+        cfg = AnkiGitConfig.from_dict({
             "repo_path": "/tmp/test",
             "invalid_key": "should_be_ignored",
             "log_level": "DEBUG",
@@ -45,15 +45,15 @@ class TestKiSyncConfig:
         assert not hasattr(cfg, "invalid_key")
 
     def test_from_dict_empty(self):
-        cfg = KiSyncConfig.from_dict({})
+        cfg = AnkiGitConfig.from_dict({})
         assert cfg.repo_path == ""
 
     def test_from_dict_none(self):
-        cfg = KiSyncConfig.from_dict(None)
+        cfg = AnkiGitConfig.from_dict(None)
         assert cfg.repo_path == ""
 
     def test_to_dict_roundtrip(self):
-        cfg1 = KiSyncConfig(
+        cfg1 = AnkiGitConfig(
             repo_path="/tmp/repo",
             auto_sync_on_startup=False,
             auto_snapshot_on_close=False,
@@ -62,7 +62,7 @@ class TestKiSyncConfig:
             sync_mode=SyncMode.PREFER_ANKI,
         )
         d = cfg1.to_dict()
-        cfg2 = KiSyncConfig.from_dict(d)
+        cfg2 = AnkiGitConfig.from_dict(d)
         assert cfg1 == cfg2
 
     def test_sync_mode_string_equality(self):
@@ -71,7 +71,7 @@ class TestKiSyncConfig:
         assert SyncMode("always_ask") == SyncMode.ALWAYS_ASK
 
     def test_config_accepts_sync_mode_string(self):
-        """KiSyncConfig accepts both StrEnum and plain string for sync_mode."""
-        cfg = KiSyncConfig(sync_mode="prefer_anki")
+        """AnkiGitConfig accepts both StrEnum and plain string for sync_mode."""
+        cfg = AnkiGitConfig(sync_mode="prefer_anki")
         assert cfg.sync_mode == SyncMode.PREFER_ANKI
         assert cfg.sync_mode == "prefer_anki"

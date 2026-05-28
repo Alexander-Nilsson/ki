@@ -1,8 +1,7 @@
 import logging
 from pathlib import Path
-from typing import Optional, Set, Tuple
 
-from git import Repo, GitCommandError, InvalidGitRepositoryError
+from git import GitCommandError, InvalidGitRepositoryError, Repo
 
 _logger = logging.getLogger("anki_git")
 
@@ -27,7 +26,7 @@ def init_repo(repo_path: Path) -> Repo:
     return Repo.init(repo_path)
 
 
-def open_repo(repo_path: Path) -> Optional[Repo]:
+def open_repo(repo_path: Path) -> Repo | None:
     try:
         return Repo(repo_path)
     except (InvalidGitRepositoryError, GitCommandError, Exception):
@@ -105,9 +104,9 @@ def get_commit_count(repo: Repo) -> int:
 
 def ensure_gitignore(repo_root: Path) -> None:
     gitignore = repo_root / ".gitignore"
-    lines = [".ki/"]
+    lines = [".anki_git/"]
     existing = gitignore.read_text(encoding="utf-8").splitlines() if gitignore.exists() else []
-    new_lines = [l for l in lines if l not in existing]
+    new_lines = [line for line in lines if line not in existing]
     if new_lines:
         gitignore.write_text(
             "\n".join(existing + new_lines) + "\n",
@@ -130,7 +129,7 @@ def _is_content_path(path: str) -> bool:
     return path.startswith(_CHANGED_PREFIXES)
 
 
-def get_changed_repo_files(repo_path: Path, last_commit_sha: Optional[str] = None) -> Tuple[Set[Path], Set[Path]]:
+def get_changed_repo_files(repo_path: Path, last_commit_sha: str | None = None) -> tuple[set[Path], set[Path]]:
     """Find changed and deleted repo files since the last import.
 
     Uses git status (for uncommitted changes: staged, unstaged, untracked)
@@ -140,8 +139,8 @@ def get_changed_repo_files(repo_path: Path, last_commit_sha: Optional[str] = Non
     filtered to 'decks/' and 'notetypes/' content directories.
     """
     repo = Repo(repo_path)
-    changed: Set[Path] = set()
-    deleted: Set[Path] = set()
+    changed: set[Path] = set()
+    deleted: set[Path] = set()
 
     # Committed changes since last import
     if last_commit_sha:
@@ -179,9 +178,8 @@ def get_changed_repo_files(repo_path: Path, last_commit_sha: Optional[str] = Non
             actual_status = index_status if index_status != " " else wt_status
             if actual_status == "D":
                 deleted.add(Path(path))
-            elif actual_status in ("M", "A", "R"):
-                if path not in {str(p) for p in deleted}:
-                    changed.add(Path(path))
+            elif actual_status in ("M", "A", "R") and path not in {str(p) for p in deleted}:
+                changed.add(Path(path))
     except Exception:
         _logger.warning("git status --porcelain failed", exc_info=True)
 

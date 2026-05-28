@@ -7,12 +7,12 @@ remain testable without the Anki Qt runtime.
 
 import logging
 from pathlib import Path
-from typing import Dict, Optional, Set, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from anki.collection import Collection
 from anki.notes import NoteId
 
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
+from anki_git.engine.constants import DECKS_DIR, NOTETYPES_DIR
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("anki_git")
 
 
-def compute_anki_checksums(col: Collection) -> Dict[str, str]:
+def compute_anki_checksums(col: Collection) -> dict[str, str]:
     """Compute checksums for Anki notes using the same Note.serialize()
     format as git checksums, so conflict detection works correctly.
     """
@@ -41,12 +41,12 @@ def compute_anki_checksums(col: Collection) -> Dict[str, str]:
     return checksums
 
 
-def compute_git_checksums(repo_path: Path) -> Tuple[Dict[str, str], Dict[int, "Note"]]:
+def compute_git_checksums(repo_path: Path) -> tuple[dict[str, str], dict[int, "Note"]]:
     from anki_git.engine.checksums import content_hash
     from anki_git.formats.notes_md import parse_notes_file
 
     checksums = {}
-    notes: Dict[int, "Note"] = {}
+    notes: dict[int, Note] = {}
     decks_dir = repo_path / DECKS_DIR
     for notes_file in sorted(decks_dir.rglob("*.md")):
         for note_data in parse_notes_file(notes_file):
@@ -55,14 +55,14 @@ def compute_git_checksums(repo_path: Path) -> Tuple[Dict[str, str], Dict[int, "N
     return checksums, notes
 
 
-def load_all_repo_notes(repo_path: Path) -> Dict[int, "Note"]:
+def load_all_repo_notes(repo_path: Path) -> dict[int, "Note"]:
     """Build {nid: Note} lookup dict from all repo files.
 
     This is the O(n) alternative to scanning all files per-note (O(n*m)).
     """
     from anki_git.formats.notes_md import parse_notes_file
 
-    notes: Dict[int, "Note"] = {}
+    notes: dict[int, Note] = {}
 
     decks_dir = repo_path / DECKS_DIR
     for notes_file in sorted(decks_dir.rglob("*.md")):
@@ -72,7 +72,7 @@ def load_all_repo_notes(repo_path: Path) -> Dict[int, "Note"]:
 
 
 def import_single_note(col: Collection, repo_path: Path, nid: int,
-                       notes_lookup: Optional[Dict[int, "Note"]] = None) -> bool:
+                       notes_lookup: dict[int, "Note"] | None = None) -> bool:
     """Import a single note from repo into Anki. Returns True on success.
 
     Optionally accepts a pre-built notes_lookup dict; if not provided,
@@ -191,14 +191,14 @@ def import_notetype(col: Collection, repo_path: Path, nt_name: str) -> bool:
 
 
 def import_notetypes(col: Collection, repo_path: Path, result,
-                     repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> None:
+                     repo_notetypes: dict[str, "Notetype"] | None = None) -> None:
     """Import all notetypes from repo into Anki, updating result in-place.
 
     Only counts a notetype as updated if its content actually differs from
     the collection's current version (compares fields, templates, and CSS).
     If repo_notetypes is provided, skips the filesystem scan.
     """
-    from anki_git.formats.notetype_yaml import read_all_notetypes, Notetype
+    from anki_git.formats.notetype_yaml import Notetype, read_all_notetypes
 
     if repo_notetypes is None:
         notetypes_dir = repo_path / NOTETYPES_DIR
@@ -246,15 +246,15 @@ def import_notetypes(col: Collection, repo_path: Path, result,
 
 
 def import_notes(col: Collection, repo_path: Path, result,
-                 nid_filter: Optional[Set[int]] = None,
-                 notes_lookup: Optional[Dict[int, "Note"]] = None) -> None:
+                 nid_filter: set[int] | None = None,
+                 notes_lookup: dict[int, "Note"] | None = None) -> None:
     """Import notes from repo into Anki.
 
     If nid_filter is provided, only import notes whose nid is in the set.
     If notes_lookup is provided, uses it instead of scanning the filesystem.
     Updates result in-place with notes_updated/notes_created/errors/warnings.
     """
-    from anki_git.formats.notes_md import parse_notes_file, Note
+    from anki_git.formats.notes_md import Note, parse_notes_file
 
     if notes_lookup is not None:
         note_iter: list[Note] = list(notes_lookup.values())
@@ -314,7 +314,7 @@ def import_notes(col: Collection, repo_path: Path, result,
 
 
 def cleanup_stale_repo_notes(col: Collection, repo_path: Path,
-                              anki_nids: Optional[Set[int]] = None) -> int:
+                              anki_nids: set[int] | None = None) -> int:
     """Remove repo note files for notes that no longer exist in Anki.
 
     Optionally accepts a pre-computed set of Anki nids to avoid a DB query.

@@ -13,7 +13,7 @@ Matching strategy:
 
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Set, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from anki_git.formats.notes_md import Note
@@ -33,8 +33,8 @@ class ImportResult:
     notetypes_created: int = 0
     notes_deleted_from_anki: int = 0
     notes_deleted_from_git: int = 0
-    errors: List[str] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
     conflict_report: object = None
 
 
@@ -66,8 +66,8 @@ def preview_import(repo_path: Path, col=None) -> ImportResult:
         )
 
     # Fallback: simple file counting without collection access
-    from anki_git.formats.notetype_yaml import read_all_notetypes
     from anki_git.formats.notes_md import parse_notes_file
+    from anki_git.formats.notetype_yaml import read_all_notetypes
 
     notetypes_dir = repo_path / "notetypes"
     decks_dir = repo_path / "decks"
@@ -86,10 +86,10 @@ def preview_import(repo_path: Path, col=None) -> ImportResult:
 
 def pull_from_repo(col, repo_path: Path, conflict_callback=None,
                    sync_mode: str = "accept_all",
-                   anki_checksums: Optional[Dict[str, str]] = None,
-                   git_checksums: Optional[Dict[str, str]] = None,
-                   git_notes_lookup: Optional[Dict[int, "Note"]] = None,
-                   repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> ImportResult:
+                   anki_checksums: dict[str, str] | None = None,
+                   git_checksums: dict[str, str] | None = None,
+                   git_notes_lookup: dict[int, "Note"] | None = None,
+                   repo_notetypes: dict[str, "Notetype"] | None = None) -> ImportResult:
     """Import repo state into Anki with conflict detection and optional resolution.
 
     Steps:
@@ -108,8 +108,8 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
     If anki_checksums / git_checksums / git_notes_lookup / repo_notetypes
     are provided, skips the corresponding filesystem scans.
     """
-    from anki_git.engine.conflict import process_conflicts, ConflictType
     from anki_git.engine.checksums import load_meta, save_meta
+    from anki_git.engine.conflict import ConflictType, process_conflicts
 
     if anki_checksums is None:
         anki_checksums = import_helpers.compute_anki_checksums(col)
@@ -130,9 +130,9 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
     if conflict_callback and report.has_conflicts:
         report = conflict_callback(report)
 
-    resolved_nids: Set[int] = set()
-    delete_from_anki_nids: Set[int] = set()
-    delete_from_git_nids: Set[int] = set()
+    resolved_nids: set[int] = set()
+    delete_from_anki_nids: set[int] = set()
+    delete_from_git_nids: set[int] = set()
 
     for c in report.conflicts:
         if not c.resolved:
@@ -183,19 +183,18 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
         repo.git.commit("--allow-empty", "-m", msg)
 
     if repo:
-        try:
+        from contextlib import suppress
+        with suppress(ValueError, Exception):
             meta["last_commit_sha"] = repo.head.commit.hexsha
-        except (ValueError, Exception):
-            pass
     save_meta(repo_path, meta)
 
     return result
 
 
 def import_from_repo(col, repo_path: Path,
-                     nid_filter: Optional[Set[int]] = None,
-                     notes_lookup: Optional[Dict[int, "Note"]] = None,
-                     repo_notetypes: Optional[Dict[str, "Notetype"]] = None) -> ImportResult:
+                     nid_filter: set[int] | None = None,
+                     notes_lookup: dict[int, "Note"] | None = None,
+                     repo_notetypes: dict[str, "Notetype"] | None = None) -> ImportResult:
     """Apply repo state to an Anki collection.
 
     Must be called on Anki's main thread.

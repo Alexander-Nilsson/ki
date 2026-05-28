@@ -40,14 +40,11 @@ def anki_session():
         base = base_dir
 
         def cleanup(self):
-            try:
+            from contextlib import suppress
+            with suppress(Exception):
                 self.collection.close()
-            except Exception:
-                pass
-            try:
+            with suppress(Exception):
                 shutil.rmtree(self.base, ignore_errors=True)
-            except Exception:
-                pass
 
     session = Session()
     try:

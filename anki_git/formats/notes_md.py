@@ -1,8 +1,6 @@
 import re
 from pathlib import Path
-from typing import Dict, List, Optional
 from urllib.parse import quote, unquote
-
 
 HEADER_PATTERN = re.compile(
     r"<!--\s*note:\s*nid=(?P<nid>\d+)\s+"
@@ -13,7 +11,7 @@ HEADER_PATTERN = re.compile(
 )
 
 
-def _decode_tags(tags_str: Optional[str]) -> List[str]:
+def _decode_tags(tags_str: str | None) -> list[str]:
     if not tags_str:
         return []
     # New format: URL-encoded tags joined with '||'
@@ -32,9 +30,9 @@ class Note:
         self,
         nid: int,
         notetype: str,
-        tags: List[str],
+        tags: list[str],
         deck: str,
-        fields: Dict[str, str],
+        fields: dict[str, str],
     ):
         self.nid = nid
         self.notetype = notetype
@@ -56,7 +54,7 @@ class Note:
         return "\n".join(parts) + "\n"
 
 
-def parse_note_section(text: str) -> Optional[Note]:
+def parse_note_section(text: str) -> Note | None:
     # Use lstrip to handle leading newlines from re.split
     lines = text.lstrip("\n").split("\n")
     if not lines or not lines[0].startswith("<!--"):
@@ -97,7 +95,7 @@ def parse_note_section(text: str) -> Optional[Note]:
     return Note(nid=nid, notetype=notetype, tags=tags, deck=deck, fields=fields)
 
 
-def parse_notes_file(path: Path) -> List[Note]:
+def parse_notes_file(path: Path) -> list[Note]:
     if not path.exists():
         return []
     text = path.read_text(encoding="utf-8")
@@ -112,7 +110,7 @@ def parse_notes_file(path: Path) -> List[Note]:
     return notes
 
 
-def write_note_file(deck_dir: Path, note: Note, content: Optional[str] = None) -> Path:
+def write_note_file(deck_dir: Path, note: Note, content: str | None = None) -> Path:
     deck_dir.mkdir(parents=True, exist_ok=True)
     path = deck_dir / f"{note.nid}.md"
     path.write_text(content if content is not None else note.serialize(), encoding="utf-8")

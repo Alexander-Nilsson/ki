@@ -2,11 +2,11 @@
 
 import pytest
 
+from anki_git.engine.import_helpers import compute_git_checksums
 from anki_git.engine.importer import (
     ImportResult,
     preview_import,
 )
-from anki_git.engine.import_helpers import compute_git_checksums
 
 
 def test_preview_import_no_repo(tmp_path):

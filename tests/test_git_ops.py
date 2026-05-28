@@ -2,13 +2,13 @@
 from pathlib import Path
 
 from anki_git.engine.git_ops import (
-    init_repo,
-    open_repo,
-    get_or_init_repo,
     create_snapshot_commit,
-    is_dirty,
-    get_commit_count,
     ensure_gitignore,
+    get_commit_count,
+    get_or_init_repo,
+    init_repo,
+    is_dirty,
+    open_repo,
 )
 
 
@@ -79,7 +79,7 @@ def test_ensure_gitignore_creates(tmp_path):
     ensure_gitignore(tmp_path)
     gitignore = tmp_path / ".gitignore"
     assert gitignore.exists()
-    assert ".ki/" in gitignore.read_text(encoding="utf-8")
+    assert ".anki_git/" in gitignore.read_text(encoding="utf-8")
 
 
 def test_ensure_gitignore_does_not_overwrite(tmp_path):
@@ -88,7 +88,7 @@ def test_ensure_gitignore_does_not_overwrite(tmp_path):
     ensure_gitignore(tmp_path)
     content = gitignore.read_text(encoding="utf-8")
     assert content.startswith("custom\n")
-    assert ".ki/" in content
+    assert ".anki_git/" in content
 
 
 def test_create_snapshot_commit(tmp_path):

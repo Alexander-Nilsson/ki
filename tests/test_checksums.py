@@ -1,7 +1,7 @@
 """Tests for content hashing and meta.json persistence."""
-from pathlib import Path
-import tempfile
 import json
+import tempfile
+from pathlib import Path
 
 from anki_git.engine.checksums import (
     content_hash,
@@ -25,6 +25,7 @@ def test_content_hash_differs():
 def test_quick_has_changes_no_baseline():
     """Returns None when no meta baseline exists."""
     from unittest.mock import MagicMock
+
     from anki_git.engine.checksums import quick_has_changes
 
     col = MagicMock()
@@ -35,6 +36,7 @@ def test_quick_has_changes_no_baseline():
 def test_quick_has_changes_count_differs(tmp_path):
     """Returns True when note count changed."""
     from unittest.mock import MagicMock
+
     from anki_git.engine.checksums import quick_has_changes, save_meta
 
     save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
@@ -47,6 +49,7 @@ def test_quick_has_changes_count_differs(tmp_path):
 def test_quick_has_changes_mod_differs(tmp_path):
     """Returns True when max mod changed."""
     from unittest.mock import MagicMock
+
     from anki_git.engine.checksums import quick_has_changes, save_meta
 
     save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
@@ -59,6 +62,7 @@ def test_quick_has_changes_mod_differs(tmp_path):
 def test_quick_has_changes_no_repo(tmp_path):
     """Returns True when repo path has no valid git repo."""
     from unittest.mock import MagicMock
+
     from anki_git.engine.checksums import quick_has_changes, save_meta
 
     save_meta(tmp_path, {"last_note_count": 5, "last_max_mod": 100})
@@ -72,6 +76,7 @@ def test_quick_has_changes_no_changes(tmp_path):
     """Returns False when nothing changed (no SHA stored, not dirty)."""
     import json
     from unittest.mock import MagicMock
+
     from anki_git.engine.checksums import quick_has_changes
     from anki_git.engine.git_ops import init_repo
 
@@ -79,12 +84,12 @@ def test_quick_has_changes_no_changes(tmp_path):
     (tmp_path / ".gitignore").write_text("", encoding="utf-8")
     repo.index.add([".gitignore"])
     repo.index.commit("init")
-    meta_path = tmp_path / ".ki" / "meta.json"
+    meta_path = tmp_path / ".anki_git" / "meta.json"
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps({
         "last_note_count": 5, "last_max_mod": 100,
     }, indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
-    repo.index.add([".ki/meta.json"])
+    repo.index.add([".anki_git/meta.json"])
     repo.index.commit("meta")
     col = MagicMock()
     col.db.scalar.side_effect = [5, 100]
@@ -114,7 +119,7 @@ def test_quick_repo_has_changes_clean(tmp_path):
     from anki_git.engine.git_ops import init_repo
 
     repo = init_repo(tmp_path)
-    (tmp_path / ".gitignore").write_text(".ki/\n", encoding="utf-8")
+    (tmp_path / ".gitignore").write_text(".anki_git/\n", encoding="utf-8")
     repo.index.add([".gitignore"])
     repo.index.commit("init")
 
@@ -148,7 +153,7 @@ def test_quick_repo_has_changes_dirty(tmp_path):
 def test_save_and_load_meta(tmp_path):
     meta = {"last_export_time": 1700000000, "note_checksums": {"1": "abc"}}
     save_meta(tmp_path, meta)
-    meta_path = tmp_path / ".ki" / "meta.json"
+    meta_path = tmp_path / ".anki_git" / "meta.json"
     assert meta_path.exists()
     loaded = json.loads(meta_path.read_text(encoding="utf-8"))
     assert loaded == meta
@@ -170,4 +175,4 @@ def test_save_meta_creates_directory():
     with tempfile.TemporaryDirectory() as tmpdir:
         deep_path = Path(tmpdir) / "a" / "b" / "c"
         save_meta(deep_path, {"test": True})
-        assert (deep_path / ".ki" / "meta.json").exists()
+        assert (deep_path / ".anki_git" / "meta.json").exists()

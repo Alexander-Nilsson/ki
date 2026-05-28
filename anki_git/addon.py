@@ -2,10 +2,9 @@ import datetime
 import logging
 from pathlib import Path
 
-from anki_git.config import KiSyncConfig
+from anki_git.config import AnkiGitConfig
 from anki_git.engine.exporter import export_collection
 from anki_git.engine.git_ops import get_existing_remote_url, open_repo
-
 
 _config = None
 _logger = logging.getLogger("anki_git")
@@ -68,24 +67,24 @@ def _setup_logging():
         print(f"AnkiGit: Could not setup file logging: {e}")
 
 
-def load_config() -> KiSyncConfig:
+def load_config() -> AnkiGitConfig:
     global _config
     if _config is not None:
         return _config
     aqt = _import("aqt")
     if aqt is None:
-        _config = KiSyncConfig()
+        _config = AnkiGitConfig()
         return _config
     try:
         raw = aqt.mw.addonManager.getConfig(__name__.split(".")[0])
-        _config = KiSyncConfig.from_dict(raw) if raw else KiSyncConfig()
+        _config = AnkiGitConfig.from_dict(raw) if raw else AnkiGitConfig()
     except Exception:
         _logger.exception("Failed to load config, using defaults")
-        _config = KiSyncConfig()
+        _config = AnkiGitConfig()
     return _config
 
 
-def save_config(config: KiSyncConfig) -> None:
+def save_config(config: AnkiGitConfig) -> None:
     global _config
     _config = config
     _apply_log_level()
@@ -102,8 +101,9 @@ def save_config(config: KiSyncConfig) -> None:
 
 def snapshot_action() -> None:
     from aqt.qt import QMessageBox
-    from anki_git.ui import DiffDialog
+
     from anki_git.engine.diff import compute_export_diff_delta
+    from anki_git.ui import DiffDialog
 
     config = load_config()
     from aqt import mw
@@ -215,9 +215,10 @@ def snapshot_action() -> None:
 
 def import_action() -> None:
     from aqt.qt import QMessageBox
-    from anki_git.ui import ConflictResolutionDialog, DiffDialog
-    from anki_git.engine.importer import pull_from_repo
+
     from anki_git.engine.diff import compute_import_diff_delta
+    from anki_git.engine.importer import pull_from_repo
+    from anki_git.ui import ConflictResolutionDialog, DiffDialog
 
     config = load_config()
     from aqt import mw
@@ -304,8 +305,8 @@ def import_action() -> None:
         def do_import(col):
             col_path = Path(col.path)
             backup_path = (
-                repo_path / ".ki" / "backups"
-                / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+                repo_path / ".anki_git" / "backups"
+                / f"pre-import-{int(datetime.datetime.now(datetime.UTC).timestamp())}.anki2"
             )
             backup_path.parent.mkdir(parents=True, exist_ok=True)
             backup_path.write_bytes(col_path.read_bytes())
@@ -376,6 +377,7 @@ def import_action() -> None:
 
 def settings_action() -> None:
     from aqt import mw
+
     from anki_git.ui import SettingsDialog
     config = load_config()
     dialog = SettingsDialog(config, mw)
@@ -427,8 +429,9 @@ def _try_fetch(remote) -> None:
 
 def _fetch_remote_background(repo_path: Path) -> None:
     """Fire-and-forget git fetch from origin in a daemon thread."""
-    from anki_git.engine.git_ops import open_repo
     import threading
+
+    from anki_git.engine.git_ops import open_repo
 
     repo = open_repo(repo_path)
     if repo is None:
@@ -443,7 +446,7 @@ def _fetch_remote_background(repo_path: Path) -> None:
         pass
 
 
-def _run_startup_import(config: KiSyncConfig) -> None:
+def _run_startup_import(config: AnkiGitConfig) -> None:
     """Show import diff on startup. Let user accept/reject repo changes.
 
     Runs a synchronous git-only check first — only shows a progress dialog
@@ -451,9 +454,10 @@ def _run_startup_import(config: KiSyncConfig) -> None:
     """
     from aqt import mw
     from aqt.qt import QMessageBox
-    from anki_git.ui import DiffDialog
-    from anki_git.engine.diff import compute_import_diff_delta
+
     from anki_git.engine.checksums import quick_repo_has_changes
+    from anki_git.engine.diff import compute_import_diff_delta
+    from anki_git.ui import DiffDialog
 
     repo_path = Path(config.repo_path)
 
@@ -509,8 +513,8 @@ def _run_startup_import(config: KiSyncConfig) -> None:
         def do_import(col):
             col_path = Path(col.path)
             backup_path = (
-                repo_path / ".ki" / "backups"
-                / f"pre-import-{int(datetime.datetime.now(datetime.timezone.utc).timestamp())}.anki2"
+                repo_path / ".anki_git" / "backups"
+                / f"pre-import-{int(datetime.datetime.now(datetime.UTC).timestamp())}.anki2"
             )
             backup_path.parent.mkdir(parents=True, exist_ok=True)
             backup_path.write_bytes(col_path.read_bytes())

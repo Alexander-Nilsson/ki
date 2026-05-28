@@ -2,7 +2,6 @@ import re
 import subprocess
 from enum import Enum
 from pathlib import Path
-from typing import Set
 
 
 class MediaStrategy(Enum):
@@ -46,7 +45,7 @@ def handle_media(
     media_dir: Path,
     repo_media_dir: Path,
     strategy: MediaStrategy,
-    filenames: Set[str],
+    filenames: set[str],
 ) -> None:
     if strategy == MediaStrategy.NONE:
         return
@@ -76,7 +75,7 @@ def handle_media(
             _track_with_git_lfs(repo_media_dir, fname)
 
 
-def get_media_filenames_from_fields(fields: str) -> Set[str]:
+def get_media_filenames_from_fields(fields: str) -> set[str]:
     names = set()
     for match in _MEDIA_PATTERN.finditer(fields):
         if match.group(1):

@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, List, Optional
 
 
 def _safe(name: str) -> str:
@@ -10,7 +9,7 @@ def notetype_dir_path(notetypes_root: Path, name: str) -> Path:
     return notetypes_root / _safe(name)
 
 
-def notetype_paths(notetypes_root: Path, name: str) -> List[Path]:
+def notetype_paths(notetypes_root: Path, name: str) -> list[Path]:
     nt_dir = notetype_dir_path(notetypes_root, name)
     if not nt_dir.is_dir():
         return []
@@ -68,12 +67,12 @@ class Notetype:
         self,
         name: str,
         id: int,
-        fields: List[NotetypeField],
-        templates: List[NotetypeTemplate],
+        fields: list[NotetypeField],
+        templates: list[NotetypeTemplate],
         css: str,
         sort_field: int = 0,
         type: int = 0,
-        deck_presets: Optional[dict] = None,
+        deck_presets: dict | None = None,
     ):
         self.name = name
         self.id = id
@@ -199,7 +198,7 @@ def write_notetype(notetypes_root: Path, nt: Notetype) -> None:
         shutil.rmtree(str(nt_dir / dname))
 
 
-def read_notetype(nt_dir: Path) -> Optional[Notetype]:
+def read_notetype(nt_dir: Path) -> Notetype | None:
     if not nt_dir.is_dir():
         return None
 
@@ -273,7 +272,7 @@ def read_notetype(nt_dir: Path) -> Optional[Notetype]:
     )
 
 
-def read_all_notetypes(notetypes_root: Path) -> Dict[str, Notetype]:
+def read_all_notetypes(notetypes_root: Path) -> dict[str, Notetype]:
     result = {}
     if not notetypes_root.exists():
         return result

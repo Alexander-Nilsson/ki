@@ -1,10 +1,13 @@
 
 import os
 from pathlib import Path
+
+import pytest
+
 from anki_git.engine.diff import compute_import_diff
 from anki_git.engine.exporter import export_collection
-from anki_git.formats.notes_md import parse_notes_file, Note
-import pytest
+from anki_git.formats.notes_md import Note, parse_notes_file
+
 
 def test_repro_import_detection(anki_session):
     col = anki_session.collection

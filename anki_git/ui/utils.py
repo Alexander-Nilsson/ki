@@ -1,6 +1,7 @@
 """Shared UI utilities for AnkiGit dialogs."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 def run_on_main_sync(mw, fn: Callable[[], Any]) -> Any:

@@ -31,13 +31,13 @@ class TestAddonImports:
 
     def test_engine_modules_importable(self):
         import anki_git.config  # noqa: F401
-        import anki_git.engine.exporter  # noqa: F401
-        import anki_git.engine.git_ops  # noqa: F401
         import anki_git.engine.checksums  # noqa: F401
         import anki_git.engine.conflict  # noqa: F401
+        import anki_git.engine.exporter  # noqa: F401
+        import anki_git.engine.git_ops  # noqa: F401
+        import anki_git.formats.media  # noqa: F401
         import anki_git.formats.notes_md  # noqa: F401
         import anki_git.formats.notetype_yaml  # noqa: F401
-        import anki_git.formats.media  # noqa: F401
 
     def test_addon_init(self):
         """Simulate the addon's entry point running."""
@@ -46,8 +46,8 @@ class TestAddonImports:
         init_addon()
 
     def test_ui_modules_importable(self):
-        import anki_git.ui.settings  # noqa: F401
         import anki_git.ui.conflicts  # noqa: F401
+        import anki_git.ui.settings  # noqa: F401
 
 
 @integration
@@ -118,9 +118,9 @@ class TestEngineAgainstCollection:
     def test_notetype_dir_roundtrip(self, anki_session, tmp_path):
         from anki_git.formats.notetype_yaml import (
             Notetype,
-            write_notetype,
-            read_notetype,
             notetype_dir_path,
+            read_notetype,
+            write_notetype,
         )
 
         col = anki_session.collection
@@ -143,9 +143,9 @@ class TestEngineAgainstCollection:
             Notetype,
             NotetypeField,
             NotetypeTemplate,
-            write_notetype,
-            read_notetype,
             notetype_dir_path,
+            read_notetype,
+            write_notetype,
         )
 
         nt = Notetype(
@@ -177,8 +177,7 @@ if (el) { el.innerHTML = 'test'; }
         assert loaded.templates[0].qfmt == nt.templates[0].qfmt
 
     def test_note_file_export(self, tmp_path):
-        from anki_git.formats.notes_md import Note
-        from anki_git.formats.notes_md import write_note_file
+        from anki_git.formats.notes_md import Note, write_note_file
 
         note = Note(
             nid=1234567890,
@@ -197,8 +196,8 @@ if (el) { el.innerHTML = 'test'; }
 
     def test_export_diff_compute(self, anki_session, tmp_path):
         """Full workflow: export → modify note → compute export diff."""
-        from anki_git.engine.exporter import export_collection
         from anki_git.engine.diff import compute_export_diff
+        from anki_git.engine.exporter import export_collection
 
         col = anki_session.collection
 
@@ -236,7 +235,7 @@ class TestUiAgainstEngine:
 
         _ = QApplication.instance() or QApplication([])
 
-        from anki_git.engine.diff import DiffReport, NoteDiff, FieldDiff, NotetypeDiff
+        from anki_git.engine.diff import DiffReport, FieldDiff, NoteDiff, NotetypeDiff
         from anki_git.ui.diff import DiffDialog
 
         nd = NoteDiff(
@@ -268,8 +267,8 @@ class TestUiAgainstEngine:
 
         _ = QApplication.instance() or QApplication([])
 
-        from anki_git.engine.exporter import export_collection
         from anki_git.engine.diff import compute_export_diff
+        from anki_git.engine.exporter import export_collection
         from anki_git.ui.diff import DiffDialog
 
         col = anki_session.collection
@@ -302,25 +301,26 @@ class TestAddonActions:
 
     def test_snapshot_action_workflow(self, anki_session, tmp_path):
         """Verify snapshot_action triggers the right sequence of QueryOps."""
-        from unittest.mock import MagicMock, patch
-        from anki_git.addon import snapshot_action
         from pathlib import Path
+        from unittest.mock import MagicMock, patch
+
+        from anki_git.addon import snapshot_action
 
         with patch("anki_git.addon.load_config") as mock_load_config, \
              patch("aqt.mw", spec=True) as mock_mw, \
              patch("aqt.operations.QueryOp") as mock_query_op, \
              patch("anki_git.ui.DiffDialog") as mock_diff_dialog:
-            
+
             # Setup config
             config = MagicMock()
             config.repo_path = str(tmp_path)
             config.media_strategy = "none"
             mock_load_config.return_value = config
-            
+
             # Setup mw
             mock_mw.col = anki_session.collection
             mock_mw.taskman = MagicMock()
-            
+
             # Track QueryOp calls
             query_ops = []
             def mock_query_op_init(parent, op, success):
@@ -330,25 +330,25 @@ class TestAddonActions:
                 qop.with_progress.return_value = qop
                 return qop
             mock_query_op.side_effect = mock_query_op_init
-            
+
             # Trigger action
             snapshot_action()
-            
+
             assert len(query_ops) == 1
             assert query_ops[0]["op"].__name__ == "get_diff_with_progress"
-            
+
             # Simulate first QueryOp success
             report = MagicMock()
             report.has_changes = True
             ui_data = []
             mock_diff_dialog.return_value.exec.return_value = True # User accepts
-            
+
             query_ops[0]["success"]((report, ui_data))
-            
+
             # Verify second QueryOp (the export) is triggered
             assert len(query_ops) == 2
             assert query_ops[1]["op"].__name__ == "do_export"
-            
+
             # Verify export operation works
             with patch("anki_git.addon.export_collection") as mock_export:
                 query_ops[1]["op"](mock_mw.col)

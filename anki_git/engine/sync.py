@@ -10,37 +10,37 @@ Flow:
 
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, Optional, Set
 
 from anki.collection import Collection
 from anki.notes import NoteId
 
 from anki_git.config import SyncMode
-from anki_git.engine.checksums import content_hash, load_meta, save_meta
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
-from anki_git.engine.conflict import (
-    process_conflicts,
-    merge_notetypes,
-    ConflictType,
-)
-from anki_git.engine.git_ops import (
-    get_or_init_repo,
-    stage_files,
-    ensure_gitignore,
-    create_snapshot_commit,
-    push_to_remote,
-    get_commit_count,
-)
 from anki_git.engine import export_helpers, import_helpers
-from anki_git.formats.notetype_yaml import (
-    Notetype,
-    read_all_notetypes,
-    write_notetype,
-    notetype_paths,
+from anki_git.engine.checksums import content_hash, load_meta, save_meta
+from anki_git.engine.conflict import (
+    ConflictType,
+    merge_notetypes,
+    process_conflicts,
+)
+from anki_git.engine.constants import DECKS_DIR, NOTETYPES_DIR
+from anki_git.engine.git_ops import (
+    create_snapshot_commit,
+    ensure_gitignore,
+    get_commit_count,
+    get_or_init_repo,
+    push_to_remote,
+    stage_files,
 )
 from anki_git.formats.notes_md import Note
+from anki_git.formats.notetype_yaml import (
+    Notetype,
+    notetype_paths,
+    read_all_notetypes,
+    write_notetype,
+)
 
 _logger = logging.getLogger("anki_git")
 
@@ -85,11 +85,11 @@ def sync_collection(
     col: Collection,
     repo_path: Path,
     sync_mode: str = SyncMode.ALWAYS_ASK,
-    conflict_callback: Optional[Callable] = None,
+    conflict_callback: Callable | None = None,
     remote_url: str = "",
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
     media_strategy: str = "none",
-    preview_callback: Optional[Callable] = None,
+    preview_callback: Callable | None = None,
 ) -> SyncResult:
     _start = time.perf_counter()
     result = SyncResult()
@@ -126,7 +126,7 @@ def sync_collection(
                 progress_callback("Waiting for conflict resolution...")
             report = conflict_callback(report)
 
-    changed_files: Set[str] = set()
+    changed_files: set[str] = set()
     notes_to_export: set[int] = set()
     notes_to_import_nids: set[int] = set()
     delete_from_anki_nids: set[int] = set()
@@ -155,7 +155,7 @@ def sync_collection(
 
     # Show preview before applying anything
     if preview_callback:
-        anki_notetypes_preview: Dict[str, Notetype] = {}
+        anki_notetypes_preview: dict[str, Notetype] = {}
         for nt_dict in col.models.all():
             nt = Notetype.from_anki_dict(nt_dict)
             anki_notetypes_preview[nt.name] = nt
@@ -250,7 +250,7 @@ def sync_collection(
             new_anki_checksums.pop(str(nid), None)
 
     # Detect notetype changes between Anki and repo
-    anki_notetypes: Dict[str, Notetype] = {}
+    anki_notetypes: dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
         anki_notetypes[nt.name] = nt

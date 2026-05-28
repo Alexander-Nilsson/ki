@@ -1,34 +1,34 @@
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from collections.abc import Callable
-from typing import Dict, List, Optional, Set, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from anki.collection import Collection
 
 if TYPE_CHECKING:
     from anki_git.engine.diff import ExportDiffData
 
-from anki_git.engine.checksums import content_hash, load_meta, save_meta
-from anki_git.engine.constants import NOTETYPES_DIR, DECKS_DIR
-from anki_git.engine.git_ops import (
-    get_or_init_repo,
-    stage_files,
-    ensure_gitignore,
-    create_snapshot_commit,
-    push_to_remote,
-    get_commit_count,
-)
 from anki_git.engine import export_helpers
+from anki_git.engine.checksums import content_hash, load_meta, save_meta
+from anki_git.engine.constants import DECKS_DIR, NOTETYPES_DIR
+from anki_git.engine.git_ops import (
+    create_snapshot_commit,
+    ensure_gitignore,
+    get_commit_count,
+    get_or_init_repo,
+    push_to_remote,
+    stage_files,
+)
+from anki_git.formats.media import MediaStrategy, get_media_filenames_from_fields, handle_media
+from anki_git.formats.notes_md import Note
 from anki_git.formats.notetype_yaml import (
     Notetype,
-    write_notetype,
-    read_all_notetypes,
     notetype_paths,
+    read_all_notetypes,
+    write_notetype,
 )
-from anki_git.formats.notes_md import Note
-from anki_git.formats.media import handle_media, get_media_filenames_from_fields, MediaStrategy
 
 _logger = logging.getLogger("anki_git")
 
@@ -39,8 +39,8 @@ class ExportResult:
         notes_changed: int = 0,
         notetypes_changed: int = 0,
         notes_deleted_from_repo: int = 0,
-        changed_decks: Optional[Dict[str, int]] = None,
-        changed_notetypes: Optional[List[str]] = None,
+        changed_decks: dict[str, int] | None = None,
+        changed_notetypes: list[str] | None = None,
         error: str = "",
         duration_seconds: float = 0.0,
         commit_count: int = 0,
@@ -62,17 +62,17 @@ class CapturedExport:
     All note data is serialized to strings so the write phase can run
     without access to the collection object.
     """
-    notetypes: Dict[str, Notetype]
-    changed_notetype_names: List[str]
-    nids: Set[int]
-    all_nids: Set[int]
-    note_entries: List[Tuple[int, str, Note]]
-    note_checksums: Dict[str, str]
-    media_filenames: Set[str]
+    notetypes: dict[str, Notetype]
+    changed_notetype_names: list[str]
+    nids: set[int]
+    all_nids: set[int]
+    note_entries: list[tuple[int, str, Note]]
+    note_checksums: dict[str, str]
+    media_filenames: set[str]
     collection_path: str
     last_max_mod: int
     last_note_count: int
-    col_media_dir: Optional[Path]
+    col_media_dir: Path | None
     media_strategy: str = "none"
 
 
@@ -86,7 +86,7 @@ def capture_export_data(
     repo_path: Path,
     quick: bool = False,
     media_strategy: str = "none",
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> CapturedExport:
     """Phase 1: read all export data from the collection.
 
@@ -103,12 +103,12 @@ def capture_export_data(
         progress_callback("Exporting notetypes...")
     old_notetypes = read_all_notetypes(notetypes_dir)
 
-    current_notetypes: Dict[str, Notetype] = {}
+    current_notetypes: dict[str, Notetype] = {}
     for nt_dict in col.models.all():
         nt = Notetype.from_anki_dict(nt_dict)
         current_notetypes[nt.name] = nt
 
-    changed_notetype_names: List[str] = []
+    changed_notetype_names: list[str] = []
     for name, nt in current_notetypes.items():
         if nt != old_notetypes.get(name):
             changed_notetype_names.append(name)
@@ -137,9 +137,9 @@ def capture_export_data(
         all_nids = nids
         total = len(nids)
 
-    note_entries: List[Tuple[int, str, Note]] = []
+    note_entries: list[tuple[int, str, Note]] = []
     note_checksums = dict(meta_checksums)
-    media_filenames: Set[str] = set()
+    media_filenames: set[str] = set()
 
     for i, nid in enumerate(sorted(nids)):
         if col.db is None:
@@ -163,7 +163,7 @@ def capture_export_data(
         if int(nid_str) not in all_nids:
             del note_checksums[nid_str]
 
-    col_media_dir: Optional[Path] = None
+    col_media_dir: Path | None = None
     if media_strategy != "none":
         col_media_dir = (
             Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
@@ -193,7 +193,7 @@ def write_export_data(
     repo_path: Path,
     captured: CapturedExport,
     remote_url: str = "",
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> ExportResult:
     """Phase 2: write captured export data to disk and git.
 
@@ -213,7 +213,7 @@ def write_export_data(
     meta_checksums = meta.get("note_checksums", {})
 
     notetypes_dir = repo_path / NOTETYPES_DIR
-    changed_files: Set[str] = set()
+    changed_files: set[str] = set()
 
     if progress_callback:
         progress_callback("Exporting notetypes...")
@@ -224,7 +224,7 @@ def write_export_data(
             changed_files.add(str(p.relative_to(repo_path)))
 
     notes_changed = 0
-    deck_counts: Dict[str, int] = {}
+    deck_counts: dict[str, int] = {}
     for nid, serialized, note in captured.note_entries:
         checksum = captured.note_checksums[str(nid)]
         old_checksum = meta_checksums.get(str(nid))
@@ -307,7 +307,7 @@ def export_collection(
     col: Collection,
     repo_path: Path,
     remote_url: str = "",
-    progress_callback: Optional[Callable[[str], None]] = None,
+    progress_callback: Callable[[str], None] | None = None,
     media_strategy: str = "none",
     quick: bool = False,
     export_data: Optional["ExportDiffData"] = None,

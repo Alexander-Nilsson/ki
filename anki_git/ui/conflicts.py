@@ -1,11 +1,22 @@
 import json
-from aqt.qt import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QTableWidget, QTableWidgetItem, QGroupBox, QMenu,
-    QDialogButtonBox, QSplitter, QTextBrowser, QFrame,
-    Qt,
-)
+
 from aqt import mw
+from aqt.qt import (
+    QDialog,
+    QDialogButtonBox,
+    QFrame,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QMenu,
+    QPushButton,
+    QSplitter,
+    Qt,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextBrowser,
+    QVBoxLayout,
+)
 
 from anki_git.engine.conflict import ConflictReport, ConflictType
 

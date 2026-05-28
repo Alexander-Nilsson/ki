@@ -1,28 +1,28 @@
 import difflib
 import logging
-from typing import List, Dict, Any, Set
+from typing import Any
 
+from aqt import mw
 from aqt.qt import (
     QDialog,
-    QVBoxLayout,
-    QHBoxLayout,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
-    QWidget,
+    Qt,
+    QTextBrowser,
     QTreeWidget,
     QTreeWidgetItem,
-    QTextBrowser,
-    Qt,
+    QVBoxLayout,
+    QWidget,
 )
-from aqt import mw
 
 _logger = logging.getLogger("anki_git")
 
 
 def get_token_diff(old_str: str, new_str: str):
-    MAX_LINE_LEN = 5000
-    if len(old_str) > MAX_LINE_LEN or len(new_str) > MAX_LINE_LEN:
+    max_line_len = 5000
+    if len(old_str) > max_line_len or len(new_str) > max_line_len:
         return (
             old_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"),
             new_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -70,7 +70,7 @@ def _count_lines(data: dict) -> tuple:
     return added, removed
 
 
-def _build_deck_tree(notes: List[dict]) -> dict:
+def _build_deck_tree(notes: list[dict]) -> dict:
     """Build nested dict from deck::path::parts.
 
     Returns: {deck_part: {children: {}, notes: [], note_count: N, added: N, removed: N}}
@@ -106,11 +106,11 @@ def _aggregate_counts(node: dict) -> None:
         node["removed"] += child["removed"]
 
 
-def report_to_diff_data(report) -> List[Dict[str, Any]]:
+def report_to_diff_data(report) -> list[dict[str, Any]]:
     """Convert engine DiffReport to the structure expected by DiffDialog."""
     data = []
 
-    MAX_FIELD_LEN = 20000
+    max_field_len = 20000
 
     for nd in report.note_diffs:
         fields = []
@@ -118,7 +118,7 @@ def report_to_diff_data(report) -> List[Dict[str, Any]]:
             old_val = fd.old_value
             new_val = fd.new_value
 
-            if len(old_val) > MAX_FIELD_LEN or len(new_val) > MAX_FIELD_LEN:
+            if len(old_val) > max_field_len or len(new_val) > max_field_len:
                 hunks = [{
                     "removed": (
                         "(Field too large to diff - see raw file)" if old_val else ""
@@ -226,11 +226,11 @@ def report_to_diff_data(report) -> List[Dict[str, Any]]:
 
 
 class DiffDialog(QDialog):
-    def __init__(self, diff_data: List[Dict[str, Any]], parent=None, accept_text: str = "Commit"):
+    def __init__(self, diff_data: list[dict[str, Any]], parent=None, accept_text: str = "Commit"):
         super().__init__(parent)
         self.diff_data = diff_data
         self._accept_text = accept_text
-        self._tree_items: List[tuple] = []  # (tree_item, data_or_node)
+        self._tree_items: list[tuple] = []  # (tree_item, data_or_node)
 
         self.setWindowTitle("Review Changes")
         self.resize(1000, 700)
@@ -413,15 +413,15 @@ class DiffDialog(QDialog):
             "Deselect All" if new_state == Qt.CheckState.Checked else "Select All"
         )
 
-    def get_checked_nids(self) -> Set[str]:
-        result: Set[str] = set()
+    def get_checked_nids(self) -> set[str]:
+        result: set[str] = set()
         for item, data in self._tree_items:
             if data["type"] == "note" and item.checkState(0) == Qt.CheckState.Checked:
                 result.add(data["id"])
         return result
 
-    def get_checked_notetypes(self) -> Set[str]:
-        result: Set[str] = set()
+    def get_checked_notetypes(self) -> set[str]:
+        result: set[str] = set()
         for item, data in self._tree_items:
             if data["type"] == "template" and item.checkState(0) == Qt.CheckState.Checked:
                 result.add(data["id"])
@@ -456,7 +456,7 @@ class DiffDialog(QDialog):
         if self._tree_items:
             self.sidebar.setCurrentItem(self._tree_items[0][0])
 
-    def _build_deck_tree_nodes(self, notes: List[dict], parent: QTreeWidgetItem):
+    def _build_deck_tree_nodes(self, notes: list[dict], parent: QTreeWidgetItem):
         tree = _build_deck_tree(notes)
 
         def add_children(node: dict, parent_item: QTreeWidgetItem):

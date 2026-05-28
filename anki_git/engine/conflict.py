@@ -1,8 +1,6 @@
-from __future__ import annotations
-
 """Three-way merge conflict detection.
 
-Store {nid: md5(content)} in .ki/meta.json for every exported note.
+Store {nid: md5(content)} in .anki_git/meta.json for every exported note.
 Compare three states:
   - base: last exported state (checksums in meta.json)
   - local: current Anki collection
@@ -18,12 +16,14 @@ Conflict cases:
   7. Deleted in one, changed in other -> conflict
 """
 
+from __future__ import annotations
+
 import json
 import logging
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Dict, List, Optional, TYPE_CHECKING
-from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from anki_git.config import SyncMode
 
@@ -46,16 +46,16 @@ class ConflictType(Enum):
 class NoteConflict:
     nid: int
     conflict_type: ConflictType
-    anki_content: Optional[str] = None
-    git_content: Optional[str] = None
-    base_content: Optional[str] = None
+    anki_content: str | None = None
+    git_content: str | None = None
+    base_content: str | None = None
     resolved: bool = False
-    resolution: Optional[str] = None
+    resolution: str | None = None
 
 
 @dataclass
 class ConflictReport:
-    conflicts: List[NoteConflict] = field(default_factory=list)
+    conflicts: list[NoteConflict] = field(default_factory=list)
 
     @property
     def has_conflicts(self) -> bool:
@@ -78,10 +78,7 @@ def resolve_conflicts(report: ConflictReport, sync_mode: str) -> None:
             if sync_mode == SyncMode.PREFER_ANKI:
                 c.resolution = "anki"
                 c.resolved = True
-            elif sync_mode == SyncMode.PREFER_REPO:
-                c.resolution = "git"
-                c.resolved = True
-            elif sync_mode == SyncMode.ACCEPT_ALL:
+            elif sync_mode == SyncMode.PREFER_REPO or sync_mode == SyncMode.ACCEPT_ALL:
                 c.resolution = "git"
                 c.resolved = True
             # ALWAYS_ASK: leave unresolved
@@ -108,7 +105,7 @@ class NotetypeComponentConflict:
     anki_content: str = ""
     git_content: str = ""
     resolved: bool = False
-    resolution: Optional[str] = None
+    resolution: str | None = None
 
 
 def merge_notetypes(
@@ -121,7 +118,7 @@ def merge_notetypes(
     Returns (merged_notetype, component_conflicts).
     The caller should check component_conflicts and handle unresolved ones.
     """
-    conflicts: List[NotetypeComponentConflict] = []
+    conflicts: list[NotetypeComponentConflict] = []
 
     # ── Merge fields ──────────────────────────────────────────────
     def field_key(f):
@@ -238,7 +235,7 @@ def merge_notetypes(
 
 
 def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
-                                  notes_lookup: Optional[Dict[int, "Note"]] = None) -> None:
+                                  notes_lookup: dict[int, Note] | None = None) -> None:
     """Populate anki_content/git_content on true CONFLICT notes.
 
     Fetches the actual field content from both sides so the UI can render
@@ -250,10 +247,7 @@ def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
     """
     from anki_git.engine.import_helpers import load_all_repo_notes
 
-    if notes_lookup is None:
-        repo_notes = load_all_repo_notes(repo_path)
-    else:
-        repo_notes = notes_lookup
+    repo_notes = load_all_repo_notes(repo_path) if notes_lookup is None else notes_lookup
 
     if not report.has_conflicts:
         return
@@ -281,13 +275,13 @@ def enrich_conflicts_with_content(report: ConflictReport, col, repo_path: Path,
 
 
 def process_conflicts(
-    base_checksums: Dict[str, str],
-    anki_checksums: Dict[str, str],
-    git_checksums: Dict[str, str],
+    base_checksums: dict[str, str],
+    anki_checksums: dict[str, str],
+    git_checksums: dict[str, str],
     sync_mode: str,
     col,
     repo_path: Path,
-    notes_lookup: Optional[Dict[int, "Note"]] = None,
+    notes_lookup: dict[int, Note] | None = None,
 ) -> ConflictReport:
     """Combined three-step conflict pipeline: detect → resolve → enrich.
 
@@ -300,9 +294,9 @@ def process_conflicts(
 
 
 def detect_conflicts(
-    base_checksums: Dict[str, str],
-    anki_checksums: Dict[str, str],
-    git_checksums: Dict[str, str],
+    base_checksums: dict[str, str],
+    anki_checksums: dict[str, str],
+    git_checksums: dict[str, str],
 ) -> ConflictReport:
     report = ConflictReport()
     all_nids = set(base_checksums) | set(anki_checksums) | set(git_checksums)

@@ -8,7 +8,7 @@ Anki addon providing Git-based version control for Anki collections. Export coll
 anki_git/
 ├── __init__.py          # Hook registration only; calls init_addon() on import
 ├── addon.py             # Qt UI: menus, dialogs, hook wiring
-├── config.py            # KiSyncConfig dataclass (legacy naming from ki)
+├── config.py            # AnkiGitConfig dataclass + SyncMode enum
 ├── engine/              # NEVER import aqt here — must be testable without Anki
 │   ├── exporter.py      # Anki→files (one-way snapshot; supports quick delta mode)
 │   ├── importer.py      # files→Anki (one-way pull via conflict pipeline)
@@ -30,7 +30,7 @@ anki_git/
 └── config.json          # Anki addon config manager schema
 ```
 
-## Sync Modes (config.sync_mode)
+## Sync Modes (AnkiGitConfig.sync_mode)
 - `always_ask` — show conflict dialog for true conflicts (default)
 - `prefer_anki` — auto-resolve conflicts in favor of Anki side
 - `prefer_repo` — auto-resolve conflicts in favor of repo side
@@ -56,7 +56,7 @@ uv run pytest tests/ -m "not integration"    # engine-layer tests only
 uv run ruff check anki_git/ tests/           # lint
 uv run pyright anki_git/                     # type check (engine layer only)
 uv run python build.py all                   # clean → build → package .ankiaddon
-uv run python scripts/release.py 0.2.0       # bump version, tag, push
+# version bump handled by CI/CD on push to main
 ```
 
 ## Flows

@@ -1,3 +1,3 @@
 NOTETYPES_DIR = "notetypes"
 DECKS_DIR = "decks"
-META_DIR = ".ki"
+META_DIR = ".anki_git"

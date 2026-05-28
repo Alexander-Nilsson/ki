@@ -44,7 +44,7 @@ class TestExportCollection:
         assert result.error == ""
         assert (repo_path / ".git").exists()
         assert (repo_path / ".gitignore").exists()
-        assert (repo_path / ".ki" / "meta.json").exists()
+        assert (repo_path / ".anki_git" / "meta.json").exists()
 
     def test_single_note_export(self, anki_session):
         col = anki_session.collection
@@ -134,7 +134,7 @@ class TestExportCollection:
         export_collection(col, repo_path)
         assert (repo_path / ".git").exists()
         assert (repo_path / ".gitignore").exists()
-        assert (repo_path / ".ki" / "meta.json").exists()
+        assert (repo_path / ".anki_git" / "meta.json").exists()
 
     def test_notes_without_cards_skipped(self, anki_session):
         col = anki_session.collection

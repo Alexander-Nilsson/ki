@@ -1,17 +1,27 @@
 from aqt.qt import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit,
-    QPushButton, QCheckBox, QComboBox, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGroupBox, QLabel, QApplication,
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QVBoxLayout,
 )
 from git import GitCommandError
 
-from anki_git.config import KiSyncConfig, SYNC_MODE_CHOICES
-from anki_git.engine.git_ops import open_repo, get_existing_remote_url
+from anki_git.config import SYNC_MODE_CHOICES, AnkiGitConfig
 from anki_git.engine.checksums import load_meta
+from anki_git.engine.git_ops import get_existing_remote_url, open_repo
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, config: KiSyncConfig, parent=None):
+    def __init__(self, config: AnkiGitConfig, parent=None):
         super().__init__(parent)
         self.config = config
         self.setWindowTitle("AnkiGit Settings")
@@ -116,8 +126,8 @@ class SettingsDialog(QDialog):
         meta = load_meta(Path(repo_path_str))
         ts = meta.get("last_export_time")
         if ts:
-            t = datetime.datetime.fromtimestamp(ts, tz=datetime.timezone.utc)
-            ago = datetime.datetime.now(datetime.timezone.utc) - t
+            t = datetime.datetime.fromtimestamp(ts, tz=datetime.UTC)
+            ago = datetime.datetime.now(datetime.UTC) - t
             if ago.total_seconds() < 60:
                 self._status_value.setText("Just now")
             elif ago.total_seconds() < 3600:

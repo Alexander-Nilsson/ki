@@ -17,7 +17,7 @@
   "debounce_delay_ms": {
     "type": "number",
     "value": 2000,
-    "description": "Debounce delay in milliseconds for auto-export on note changes"
+    "description": "Debounce delay in milliseconds (legacy, unused)"
   },
   "media_strategy": {
     "type": "string",

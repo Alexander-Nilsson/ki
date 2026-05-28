@@ -1,8 +1,8 @@
 """Tests for media file handling."""
 from anki_git.formats.media import (
     MediaStrategy,
-    handle_media,
     get_media_filenames_from_fields,
+    handle_media,
 )
 
 

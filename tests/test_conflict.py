@@ -11,13 +11,12 @@ Conflict tests cover all 6 cases:
 Notetype merge tests cover field/template/CSS add/remove/modify.
 """
 from anki_git.engine.conflict import (
-    detect_conflicts,
-    merge_notetypes,
     ConflictType,
     SyncMode,
+    detect_conflicts,
+    merge_notetypes,
 )
 from anki_git.formats.notetype_yaml import Notetype, NotetypeField, NotetypeTemplate
-
 
 BASE = {
     "1": "base1",

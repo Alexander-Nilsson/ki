@@ -22,7 +22,7 @@ def get_version():
         with open("pyproject.toml", "rb") as f:
             return tomllib.load(f)["project"]["version"]
     except Exception:
-        return "0.1.0"
+        return "0.1.1"
 
 
 def clean():

@@ -1,19 +1,18 @@
 """Tests for notetype directory serialization/deserialization."""
 import json
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from anki_git.formats.notetype_yaml import (
     Notetype,
     NotetypeField,
     NotetypeTemplate,
-    write_notetype,
-    read_notetype,
-    read_all_notetypes,
     notetype_dir_path,
     notetype_paths,
+    read_all_notetypes,
+    read_notetype,
+    write_notetype,
 )
-
 
 BASIC_NT = Notetype(
     name="Basic",

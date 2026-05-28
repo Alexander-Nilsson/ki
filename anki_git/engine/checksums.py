@@ -1,11 +1,9 @@
 import hashlib
 import json
 from pathlib import Path
-from typing import Optional
-
-from git.repo import Repo
 
 from anki.collection import Collection
+from git.repo import Repo
 
 from anki_git.engine.constants import META_DIR
 
@@ -43,13 +41,13 @@ def _content_has_changes(repo: Repo) -> bool:
     for path in _CONTENT_PATHS:
         if repo.is_dirty(path=path):
             return True
-    for f in repo.untracked_files:
-        if f.startswith("decks/") or f.startswith("notetypes/"):
-            return True
-    return False
+    return any(
+        f.startswith("decks/") or f.startswith("notetypes/")
+        for f in repo.untracked_files
+    )
 
 
-def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
+def quick_repo_has_changes(repo_path: Path) -> bool | None:
     """Quick check if the repo has changes since last sync.
 
     Only checks git state — no Anki collection access needed.
@@ -76,14 +74,10 @@ def quick_repo_has_changes(repo_path: Path) -> Optional[bool]:
         # Fresh repo or detached HEAD issues
         pass
 
-    # Check for working tree changes in content directories only
-    if _content_has_changes(repo):
-        return True
-
-    return False
+    return bool(_content_has_changes(repo))
 
 
-def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
+def quick_has_changes(col: Collection, repo_path: Path) -> bool | None:
     """Quick check if anything has changed since last sync/export.
 
     Compares note count + MAX(mod) against stored baseline, and repo HEAD
@@ -112,7 +106,7 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     repo = open_repo(repo_path)
     if repo is None:
         return True
-    
+
     # Check for new commits
     try:
         current_sha = repo.head.commit.hexsha
@@ -121,7 +115,4 @@ def quick_has_changes(col: Collection, repo_path: Path) -> Optional[bool]:
     except (ValueError, Exception):
         pass
 
-    if _content_has_changes(repo):
-        return True
-
-    return False
+    return bool(_content_has_changes(repo))

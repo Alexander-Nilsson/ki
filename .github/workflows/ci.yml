@@ -100,20 +100,14 @@ jobs:
           ")
 
           .venv/bin/python -c "
-          import re
-          with open('pyproject.toml', 'r+') as f:
-              c = f.read(); f.seek(0)
-              f.write(re.sub(r'^version = \".*\"', f'version = \"$NEW_VERSION\"', c, flags=re.MULTILINE))
-              f.truncate()
-          "
-
-          .venv/bin/python -c "
-          import re
-          with open('anki_git/__init__.py', 'r+') as f:
-              c = f.read(); f.seek(0)
-              f.write(re.sub(r'^version = \".*\"', f'version = \"$NEW_VERSION\"', c, flags=re.MULTILINE))
-              f.truncate()
-          "
+import re, os
+v = os.environ['NEW_VERSION']
+for path in ['pyproject.toml', 'anki_git/__init__.py']:
+    with open(path, 'r+') as f:
+        c = f.read(); f.seek(0)
+        f.write(re.sub(r'^version = \".*\"', f'version = \"{v}\"', c, flags=re.MULTILINE))
+        f.truncate()
+"
 
           .venv/bin/python build.py all
 

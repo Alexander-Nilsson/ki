@@ -1,13 +1,12 @@
 """Tests for Markdown note serialization/deserialization."""
-from pathlib import Path
 import tempfile
+from pathlib import Path
 
 from anki_git.formats.notes_md import (
     Note,
     parse_note_section,
     parse_notes_file,
 )
-
 
 SINGLE_NOTE = """\
 <!-- note: nid=1234567890 notetype=Basic tags=japanese::vocab deck=Japanese::N5 -->

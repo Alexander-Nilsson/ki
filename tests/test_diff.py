@@ -1,8 +1,8 @@
 """Tests for the diff engine."""
 
+from anki_git.engine.diff import compute_note_diff, compute_notetype_diff
 from anki_git.formats.notes_md import Note
 from anki_git.formats.notetype_yaml import Notetype, NotetypeField
-from anki_git.engine.diff import compute_note_diff, compute_notetype_diff
 
 
 def test_note_diff_no_changes():

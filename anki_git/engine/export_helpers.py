@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional, Tuple, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from anki.collection import Collection
 from anki.notes import NoteId
@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 _logger = logging.getLogger("anki_git")
 
 
-def capture_single_note(col: Collection, nid: int) -> Optional[Tuple[str, Note]]:
+def capture_single_note(col: Collection, nid: int) -> tuple[str, Note] | None:
     """Read and serialize a single note from the collection, without writing to disk.
 
     Returns (serialized_content, Note) on success, None on failure.
@@ -69,7 +69,7 @@ def capture_single_note(col: Collection, nid: int) -> Optional[Tuple[str, Note]]
     return serialized, note
 
 
-def export_single_note(col: Collection, repo_path: Path, nid: int) -> Optional[Tuple[Path, str, Note]]:
+def export_single_note(col: Collection, repo_path: Path, nid: int) -> tuple[Path, str, Note] | None:
     """Export a single note from Anki into repo files.
 
     Returns (file_path, serialized_content, Note) on success, None on failure.

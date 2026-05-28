@@ -1,4 +1,4 @@
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from enum import StrEnum
 
 
@@ -18,7 +18,7 @@ SYNC_MODE_CHOICES = [
 
 
 @dataclass
-class KiSyncConfig:
+class AnkiGitConfig:
     repo_path: str = ""
     auto_sync_on_startup: bool = True
     auto_snapshot_on_close: bool = True
@@ -28,7 +28,7 @@ class KiSyncConfig:
     sync_mode: str = SyncMode.ALWAYS_ASK
 
     @classmethod
-    def from_dict(cls, d: dict) -> "KiSyncConfig":
+    def from_dict(cls, d: dict) -> "AnkiGitConfig":
         if d is None:
             return cls()
         valid_keys = set(asdict(cls()).keys())
