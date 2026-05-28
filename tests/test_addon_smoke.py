@@ -35,7 +35,6 @@ class TestAddonImports:
         import anki_git.engine.conflict  # noqa: F401
         import anki_git.engine.exporter  # noqa: F401
         import anki_git.engine.git_ops  # noqa: F401
-        import anki_git.formats.media  # noqa: F401
         import anki_git.formats.notes_md  # noqa: F401
         import anki_git.formats.notetype_yaml  # noqa: F401
 
@@ -314,7 +313,6 @@ class TestAddonActions:
             # Setup config
             config = MagicMock()
             config.repo_path = str(tmp_path)
-            config.media_strategy = "none"
             mock_load_config.return_value = config
 
             # Setup mw

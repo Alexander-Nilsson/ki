@@ -126,7 +126,6 @@ def snapshot_action() -> None:
         _logger.info("Computing export diff (delta)...")
         data = compute_export_diff_delta(
             col, repo_path,
-            media_strategy=config.media_strategy,
             progress_callback=lambda text: mw.taskman.run_on_main(
                 lambda: mw.progress.update(label=text)
             )
@@ -175,7 +174,6 @@ def snapshot_action() -> None:
                 progress_callback=lambda text: mw.taskman.run_on_main(
                     lambda: mw.progress.update(label=text)
                 ),
-                media_strategy=config.media_strategy,
                 export_data=data,
             )
 
@@ -624,7 +622,6 @@ def on_profile_close() -> None:
         captured = capture_export_data(
             mw.col, repo_path,
             quick=True,
-            media_strategy=config.media_strategy,
         )
     except Exception as e:
         _logger.warning("Failed to capture export data on close: %s", e)

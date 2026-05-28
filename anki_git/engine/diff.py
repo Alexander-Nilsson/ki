@@ -119,12 +119,9 @@ class ExportDiffData:
     all_nids: set[int] = field(default_factory=set)
     changed_notetype_names: list[str] = field(default_factory=list)
     notetypes: dict[str, Notetype] = field(default_factory=dict)
-    media_filenames: set[str] = field(default_factory=set)
     collection_path: str = ""
     last_max_mod: int = 0
     last_note_count: int = 0
-    col_media_dir: Path | None = None
-    media_strategy: str = "none"
 
 
 def _unified_diff(old: str, new: str, name: str) -> list[str]:
@@ -760,7 +757,6 @@ def _full_export_diff_scan(
     old_notetypes: dict[str, Notetype],
     current_notetypes: dict[str, Notetype],
     changed_notetype_names: list[str],
-    media_strategy: str,
     progress_callback: Callable | None = None,
 ) -> ExportDiffData:
     """Full export scan: read all notes and all .md files.
@@ -770,7 +766,6 @@ def _full_export_diff_scan(
     """
     from anki_git.engine.checksums import content_hash
     from anki_git.engine.export_helpers import capture_single_note
-    from anki_git.formats.media import get_media_filenames_from_fields
 
     report = DiffReport()
     decks_dir = repo_path / DECKS_DIR
@@ -789,7 +784,6 @@ def _full_export_diff_scan(
     anki_notes: dict[int, Note] = {}
     note_entries: dict[int, tuple[int, str, Note]] = {}
     note_checksums: dict[str, str] = {}
-    media_filenames: set[str] = set()
 
     for i, nid in enumerate(nids):
         if progress_callback and i % 20 == 0:
@@ -802,9 +796,6 @@ def _full_export_diff_scan(
         note_checksums[str(nid)] = checksum
         note_entries[nid] = (nid, serialized, note)
         anki_notes[nid] = note
-        if media_strategy != "none":
-            for field_value in note.fields.values():
-                media_filenames.update(get_media_filenames_from_fields(field_value))
 
     all_nids = set(nids)
 
@@ -812,12 +803,6 @@ def _full_export_diff_scan(
     _build_note_diff_report(repo_notes, anki_notes, report)
 
     db = col.db
-    col_media_dir: Path | None = None
-    if media_strategy != "none":
-        col_media_dir = (
-            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
-            else Path(col.path).parent / "collection.media"
-        )
 
     return ExportDiffData(
         report=report,
@@ -826,19 +811,15 @@ def _full_export_diff_scan(
         all_nids=all_nids,
         changed_notetype_names=changed_notetype_names,
         notetypes=current_notetypes,
-        media_filenames=media_filenames,
         collection_path=str(col.path),
         last_max_mod=db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0,
         last_note_count=db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0,
-        col_media_dir=col_media_dir,
-        media_strategy=media_strategy,
     )
 
 
 def compute_export_diff_delta(
     col,
     repo_path: Path,
-    media_strategy: str = "none",
     progress_callback: Callable | None = None,
 ) -> ExportDiffData:
     """Delta-based export diff using mod timestamps and git to find only changed notes.
@@ -851,7 +832,6 @@ def compute_export_diff_delta(
     from anki_git.engine.checksums import content_hash, load_meta
     from anki_git.engine.export_helpers import capture_single_note
     from anki_git.engine.git_ops import get_changed_repo_files
-    from anki_git.formats.media import get_media_filenames_from_fields
     from anki_git.formats.notetype_yaml import read_all_notetypes as _read_nt
 
     meta = load_meta(repo_path)
@@ -879,7 +859,7 @@ def compute_export_diff_delta(
         _logger.info("No last_commit_sha baseline — falling back to full export scan")
         return _full_export_diff_scan(
             col, repo_path, old_notetypes, current_notetypes, changed_notetype_names,
-            media_strategy, progress_callback=progress_callback,
+            progress_callback=progress_callback,
         )
 
     if progress_callback:
@@ -949,7 +929,6 @@ def compute_export_diff_delta(
     anki_notes: dict[int, Note] = {}
     note_entries: dict[int, tuple[int, str, Note]] = {}
     note_checksums: dict[str, str] = {}
-    media_filenames: set[str] = set()
 
     for nid in sorted(affected_nids):
         if nid not in all_nids:
@@ -964,9 +943,6 @@ def compute_export_diff_delta(
         note_checksums[str(nid)] = checksum
         note_entries[nid] = (nid, serialized, note)
         anki_notes[nid] = note
-        if media_strategy != "none":
-            for field_value in note.fields.values():
-                media_filenames.update(get_media_filenames_from_fields(field_value))
 
     # Build diff report
     report = DiffReport()
@@ -980,13 +956,6 @@ def compute_export_diff_delta(
         if int(nid_str) not in all_nids:
             del merged_checksums[nid_str]
 
-    col_media_dir: Path | None = None
-    if media_strategy != "none":
-        col_media_dir = (
-            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
-            else Path(col.path).parent / "collection.media"
-        )
-
     fresh_max_mod = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
     fresh_note_count = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
 
@@ -997,10 +966,7 @@ def compute_export_diff_delta(
         all_nids=all_nids,
         changed_notetype_names=changed_notetype_names,
         notetypes=current_notetypes,
-        media_filenames=media_filenames,
         collection_path=str(col.path),
         last_max_mod=fresh_max_mod,
         last_note_count=fresh_note_count,
-        col_media_dir=col_media_dir,
-        media_strategy=media_strategy,
     )

@@ -20,8 +20,7 @@ anki_git/
 │   └── import_helpers.py# Shared import helpers (checksums, batch import)
 ├── formats/
 │   ├── notes_md.py      # One file per note: decks/<Deck>/<nid>.md
-│   ├── notetype_yaml.py # notetypes/<Name>.yaml + <Name>.css
-│   └── media.py
+│   └── notetype_yaml.py # notetypes/<Name>.yaml + <Name>.css
 ├── ui/
 │   ├── settings.py      # Settings dialog (includes sync_mode selector)
 │   ├── conflicts.py     # Conflict resolution dialog
@@ -40,7 +39,6 @@ anki_git/
 
 - **engine/ must never import aqt** — only `anki`. Addon.py + ui/ handle Qt.
 - **Collection writes only on main thread** via `mw.taskman.run_on_main()`. Never from background threads.
-- **Default `media_strategy` to `"none"`** — require explicit opt-in.
 - **Pre-operation backups** before any import/pull.
 - **Wrap imports** in `col.db.begin()` / `.commit()` / `.rollback()`.
 - **Match notes by nid**, notetypes by name.

@@ -2,7 +2,6 @@
     "repo_path": "",
     "auto_sync_on_startup": true,
     "auto_snapshot_on_close": true,
-    "media_strategy": "none",
     "auto_push_after_snapshot": true,
     "log_level": "INFO",
     "sync_mode": "always_ask"

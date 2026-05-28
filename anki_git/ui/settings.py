@@ -86,13 +86,6 @@ class SettingsDialog(QDialog):
         status_layout.addRow("Last sync:", self._status_value)
         layout.addWidget(status_group)
 
-        media_group = QGroupBox("Media", self)
-        media_layout = QFormLayout(media_group)
-        self._media_strategy_combo = QComboBox(self)
-        self._media_strategy_combo.addItems(["none", "symlink", "copy", "git-lfs"])
-        media_layout.addRow("Media strategy:", self._media_strategy_combo)
-        layout.addWidget(media_group)
-
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             self,
@@ -107,9 +100,6 @@ class SettingsDialog(QDialog):
         self._auto_close_cb.setChecked(self.config.auto_snapshot_on_close)
         self._auto_push_cb.setChecked(self.config.auto_push_after_snapshot)
 
-        idx = self._media_strategy_combo.findText(self.config.media_strategy)
-        if idx >= 0:
-            self._media_strategy_combo.setCurrentIndex(idx)
         idx = self._sync_mode_combo.findData(self.config.sync_mode)
         if idx >= 0:
             self._sync_mode_combo.setCurrentIndex(idx)
@@ -143,7 +133,6 @@ class SettingsDialog(QDialog):
         self.config.auto_sync_on_startup = self._auto_startup_cb.isChecked()
         self.config.auto_snapshot_on_close = self._auto_close_cb.isChecked()
         self.config.auto_push_after_snapshot = self._auto_push_cb.isChecked()
-        self.config.media_strategy = self._media_strategy_combo.currentText()
         self.config.sync_mode = self._sync_mode_combo.currentData()
         self.accept()
 

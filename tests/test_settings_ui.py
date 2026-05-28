@@ -13,7 +13,6 @@ class TestSettingsDialogLogic:
             repo_path="/tmp/test",
             auto_sync_on_startup=True,
             auto_snapshot_on_close=False,
-            media_strategy="symlink",
             log_level="DEBUG",
             sync_mode=SyncMode.PREFER_REPO,
         )
@@ -24,7 +23,6 @@ class TestSettingsDialogLogic:
     def test_config_defaults(self):
         config = AnkiGitConfig()
         assert config.sync_mode == SyncMode.ALWAYS_ASK
-        assert config.media_strategy == "none"
         assert config.log_level == "INFO"
 
     def test_config_ignores_extra_keys(self):

@@ -88,7 +88,6 @@ def sync_collection(
     conflict_callback: Callable | None = None,
     remote_url: str = "",
     progress_callback: Callable[[str], None] | None = None,
-    media_strategy: str = "none",
     preview_callback: Callable | None = None,
 ) -> SyncResult:
     _start = time.perf_counter()

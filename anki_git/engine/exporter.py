@@ -21,7 +21,6 @@ from anki_git.engine.git_ops import (
     push_to_remote,
     stage_files,
 )
-from anki_git.formats.media import MediaStrategy, get_media_filenames_from_fields, handle_media
 from anki_git.formats.notes_md import Note
 from anki_git.formats.notetype_yaml import (
     Notetype,
@@ -68,12 +67,9 @@ class CapturedExport:
     all_nids: set[int]
     note_entries: list[tuple[int, str, Note]]
     note_checksums: dict[str, str]
-    media_filenames: set[str]
     collection_path: str
     last_max_mod: int
     last_note_count: int
-    col_media_dir: Path | None
-    media_strategy: str = "none"
 
 
 def _note_file_path(repo_path: Path, note: Note) -> Path:
@@ -85,7 +81,6 @@ def capture_export_data(
     col: Collection,
     repo_path: Path,
     quick: bool = False,
-    media_strategy: str = "none",
     progress_callback: Callable[[str], None] | None = None,
 ) -> CapturedExport:
     """Phase 1: read all export data from the collection.
@@ -139,7 +134,6 @@ def capture_export_data(
 
     note_entries: list[tuple[int, str, Note]] = []
     note_checksums = dict(meta_checksums)
-    media_filenames: set[str] = set()
 
     for i, nid in enumerate(sorted(nids)):
         if col.db is None:
@@ -154,21 +148,11 @@ def capture_export_data(
         checksum = content_hash(serialized)
         note_checksums[str(nid)] = checksum
         note_entries.append((nid, serialized, note))
-        if media_strategy != "none":
-            for field_value in note.fields.values():
-                media_filenames.update(get_media_filenames_from_fields(field_value))
 
     # Remove checksums for notes deleted from Anki
     for nid_str in list(note_checksums):
         if int(nid_str) not in all_nids:
             del note_checksums[nid_str]
-
-    col_media_dir: Path | None = None
-    if media_strategy != "none":
-        col_media_dir = (
-            Path(col.media.dir()) if hasattr(col, "media") and col.media is not None
-            else Path(col.path).parent / "collection.media"
-        )
 
     last_note_count = db.scalar("SELECT COUNT(*) FROM notes WHERE id > 0") or 0
     last_max_mod = db.scalar("SELECT MAX(mod) FROM notes WHERE id > 0") or 0
@@ -180,12 +164,9 @@ def capture_export_data(
         all_nids=all_nids,
         note_entries=note_entries,
         note_checksums=note_checksums,
-        media_filenames=media_filenames,
         collection_path=str(col.path),
         last_max_mod=last_max_mod,
         last_note_count=last_note_count,
-        col_media_dir=col_media_dir,
-        media_strategy=media_strategy,
     )
 
 
@@ -254,13 +235,6 @@ def write_export_data(
     if cleaned > 0:
         result.notes_deleted_from_repo = cleaned
 
-    if captured.col_media_dir is not None and captured.media_filenames:
-        if progress_callback:
-            progress_callback("Handling media files...")
-        repo_media_dir = repo_path / "media"
-        strategy = MediaStrategy(captured.media_strategy)
-        handle_media(captured.col_media_dir, repo_media_dir, strategy, captured.media_filenames)
-
     result.notes_changed = notes_changed
     result.notetypes_changed = len(captured.changed_notetype_names)
     result.changed_notetypes = list(captured.changed_notetype_names)
@@ -308,7 +282,6 @@ def export_collection(
     repo_path: Path,
     remote_url: str = "",
     progress_callback: Callable[[str], None] | None = None,
-    media_strategy: str = "none",
     quick: bool = False,
     export_data: Optional["ExportDiffData"] = None,
 ) -> ExportResult:
@@ -343,12 +316,9 @@ def export_collection(
             all_nids=all_nids,
             note_entries=list(export_data.note_entries.values()),
             note_checksums=note_checksums,
-            media_filenames=export_data.media_filenames,
             collection_path=export_data.collection_path or str(col.path),
             last_max_mod=last_max_mod,
             last_note_count=last_note_count,
-            col_media_dir=export_data.col_media_dir,
-            media_strategy=export_data.media_strategy,
         )
         return write_export_data(
             repo_path, captured,
@@ -359,7 +329,6 @@ def export_collection(
     captured = capture_export_data(
         col, repo_path,
         quick=quick,
-        media_strategy=media_strategy,
         progress_callback=progress_callback,
     )
     return write_export_data(
