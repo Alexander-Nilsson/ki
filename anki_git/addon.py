@@ -336,21 +336,24 @@ def import_action() -> None:
                 )
                 return
 
-            msg = (
-                f"Import complete.\n"
-                f"Notes updated: {result.notes_updated}\n"
-                f"Notes created: {result.notes_created}\n"
-                f"Notetypes updated: {result.notetypes_updated}\n"
-                f"Notetypes created: {result.notetypes_created}"
-            )
+            parts = []
+            if result.notes_updated:
+                parts.append(f"Notes updated: {result.notes_updated}")
+            if result.notes_created:
+                parts.append(f"Notes created: {result.notes_created}")
+            if result.notetypes_updated:
+                parts.append(f"Notetypes updated: {result.notetypes_updated}")
+            if result.notetypes_created:
+                parts.append(f"Notetypes created: {result.notetypes_created}")
             if result.warnings:
                 _logger.warning(
                     "Import warnings: %s", result.warnings
                 )
-                msg += "\nWarnings:\n" + "\n".join(result.warnings[:5])
+                parts.append("Warnings: " + "; ".join(result.warnings[:5]))
             if result.errors:
                 _logger.error("Import errors: %s", result.errors)
-                msg += "\nErrors:\n" + "\n".join(result.errors[:5])
+                parts.append("Errors: " + "; ".join(result.errors[:5]))
+            msg = "\n".join(parts) if parts else "Import complete."
             QMessageBox.information(mw, "AnkiGit Import", msg)
             mw.reset()
 
