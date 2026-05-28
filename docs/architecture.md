@@ -2,7 +2,7 @@
 
 ## Complexity Notes
 
-- **3 parallel data paths (export / import / sync) with ~40% duplicated logic** — each independently walks notes, notetypes, and checksums. `import_helpers.py` extracts shared import code, but no symmetric `export_helpers.py` exists.
+- **3 parallel data paths (export / import / sync) with ~40% duplicated logic** — each independently walks notes, notetypes, and checksums. `import_helpers.py` and `export_helpers.py` extract shared code for each direction.
 - **Conflict system over-factored** — `detect_conflicts()` → `resolve_conflicts()` → `enrich_conflicts_with_content()` are always called sequentially; could be one function. `resolve_conflicts` and `merge_notetypes` duplicate the same 4-mode resolution logic for different structures.
 - **Threading boilerplate repeated 4×** — `threading.Event()` + `mw.taskman.run_on_main()` for conflict and preview callbacks appears identically in sync, import, and startup-sync.
 - **`meta.json` written twice per sync** — once for checksums, once for tracking metadata. Single write suffices.
@@ -27,7 +27,7 @@ flowchart TB
 
     subgraph ENTRY["anki_git/"]
         ADDON["addon.py (menu + hooks)"]
-        CONFIG["config.py (KiSyncConfig)"]
+        CONFIG["config.py (AnkiGitConfig)"]
     end
 
     subgraph ENGINE["anki_git/engine/ (no aqt!)"]
@@ -39,6 +39,8 @@ flowchart TB
         CHK["checksums.py (md5 + meta.json)"]
         GIT["git_ops.py (GitPython)"]
         IMPH["import_helpers.py"]
+        EXPH["export_helpers.py"]
+        CONST["constants.py (dir names)"]
     end
 
     subgraph FMT["anki_git/formats/"]
@@ -110,7 +112,7 @@ flowchart LR
 
     style S10 stroke:#e74c3c,stroke-dasharray:5 5
     style I2 stroke:#f39c12,stroke-dasharray:5 5
-    note placement="left" style S10 stroke:red,stroke-dasharray:5 5
+    note right of S10 : "Bi-directional merge — most complex step"
 ```
 
 ## 3. Key Sequence: Two-Way Sync
