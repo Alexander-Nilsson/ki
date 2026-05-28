@@ -149,6 +149,19 @@ def report_to_diff_data(report) -> list[dict[str, Any]]:
                     })
             fields.append({"name": fd.field_name, "hunks": hunks})
 
+        if nd.tags_changed:
+            old_tags_str = " ".join(nd.old_tags) if nd.old_tags else ""
+            new_tags_str = " ".join(nd.new_tags) if nd.new_tags else ""
+            fields.append({
+                "name": "Tags",
+                "hunks": [{
+                    "removed": old_tags_str,
+                    "added": new_tags_str,
+                    "context_before": "",
+                    "context_after": ""
+                }]
+            })
+
         data.append({
             "type": "note",
             "status": nd.change_type,
@@ -255,9 +268,14 @@ class DiffDialog(QDialog):
         toolbar_layout.setContentsMargins(15, 0, 15, 0)
 
         total_count = len(self.diff_data)
-        added = sum(1 for x in self.diff_data if x["status"] == "added")
-        modified = sum(1 for x in self.diff_data if x["status"] == "modified")
-        deleted = sum(1 for x in self.diff_data if x["status"] == "deleted")
+
+        total_added = 0
+        total_removed = 0
+        for item in self.diff_data:
+            for field in item.get("fields", []):
+                for hunk in field.get("hunks", []):
+                    total_added += len(hunk.get("added", "").splitlines())
+                    total_removed += len(hunk.get("removed", "").splitlines())
 
         stats_label = QLabel(f"{total_count} items")
         stats_label.setObjectName("statsLabel")
@@ -268,15 +286,9 @@ class DiffDialog(QDialog):
         self.select_all_btn.clicked.connect(self._toggle_select_all)
         toolbar_layout.addWidget(self.select_all_btn)
 
-        def add_dot_stat(color, count):
-            dot = QLabel("\u25cf")
-            dot.setStyleSheet(f"color: {color}; margin-left: 10px;")
-            toolbar_layout.addWidget(dot)
-            toolbar_layout.addWidget(QLabel(str(count)))
-
-        add_dot_stat("#888", modified)
-        add_dot_stat("#2ecc71", added)
-        add_dot_stat("#e74c3c", deleted)
+        toolbar_layout.addWidget(QLabel(f'<span style="color: #2ecc71;">+{total_added}</span>'
+                                        f' / <span style="color: #e74c3c;">-{total_removed}</span>'
+                                        f' <span style="color: #888;">lines</span>'))
 
         toolbar_layout.addStretch()
 
