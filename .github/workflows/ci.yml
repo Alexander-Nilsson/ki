@@ -91,37 +91,8 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         id: build_step
         run: |
-          NEW_VERSION=$(.venv/bin/python -c "
-          import tomllib
-          with open('pyproject.toml', 'rb') as f:
-              v = tomllib.load(f)['project']['version'].split('.')
-          v[-1] = str(int(v[-1]) + 1)
-          print('.'.join(v))
-          ")
-
-          python3 -c "
-          import re, os
-          v = os.environ['NEW_VERSION']
-          for path in ['pyproject.toml', 'anki_git/__init__.py']:
-              with open(path, 'r+') as f:
-                  c = f.read(); f.seek(0)
-                  f.write(re.sub(r'^version = \".*\"', 'version = \"' + v + '\"', c, flags=re.MULTILINE))
-                  f.truncate()
-          "
-
-          .venv/bin/python build.py all
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
-          git add pyproject.toml anki_git/__init__.py
-          git commit -m "Bump version to $NEW_VERSION [skip ci]"
-          git tag -d "v$NEW_VERSION" 2>/dev/null || true
-          git tag "v$NEW_VERSION"
-          git push origin main +"refs/tags/v$NEW_VERSION"
-
-          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$NEW_VERSION" >> "$GITHUB_OUTPUT"
+          .venv/bin/python scripts/release.py --push
 
       - name: Create Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
