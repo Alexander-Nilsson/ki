@@ -25,6 +25,16 @@ from anki_git.engine import import_helpers
 _logger = logging.getLogger("anki_git")
 
 
+def _nid_from_path(path: Path) -> int | None:
+    """Extract nid from a decks/<deck>/<nid>.md path."""
+    if path.suffix != ".md":
+        return None
+    try:
+        return int(path.stem)
+    except ValueError:
+        return None
+
+
 @dataclass
 class ImportResult:
     notes_updated: int = 0
@@ -169,7 +179,11 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
 
     from anki_git.engine.git_ops import open_repo
     repo = open_repo(repo_path)
-    meta["note_checksums"] = git_checksums
+
+    # Preserve existing checksums and only update the imported notes
+    existing_checksums = meta.get("note_checksums", {})
+    existing_checksums.update(git_checksums)
+    meta["note_checksums"] = existing_checksums
 
     total_imported = result.notes_updated + result.notes_created
     total_notetypes = result.notetypes_updated + result.notetypes_created
@@ -180,7 +194,29 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
         if total_notetypes:
             parts.append(f"{total_notetypes} notetypes")
         msg = f"Import {', '.join(parts)} from repo"
-        repo.git.commit("--allow-empty", "-m", msg)
+
+        all_imported_nids: set[int] = resolved_nids | delete_from_git_nids
+        repo.git.add(all=True)
+
+        # Unstage note files that were NOT imported
+        for line in repo.git.diff("--cached", "--name-status").splitlines():
+            if not line.strip():
+                continue
+            parts_line = line.split("\t", 1)
+            if len(parts_line) < 2:
+                continue
+            path_str = parts_line[1]
+            p = Path(path_str)
+            if p.suffix != ".md" or p.parts[:1] != ("decks",):
+                continue
+            nid = _nid_from_path(p)
+            if nid is not None and nid not in all_imported_nids:
+                repo.git.reset("--", path_str)
+
+        try:
+            repo.index.commit(msg)
+        except Exception:
+            _logger.warning("Verification commit skipped (no files staged)")
 
     if repo:
         from contextlib import suppress

@@ -282,3 +282,118 @@ def test_import_from_repo_with_error(tmp_path, anki_session):
 
     assert len(result.errors) > 0
     assert isinstance(result.errors, list)
+
+
+@pytest.mark.integration
+def test_import_partial_selection_no_reappearance(tmp_path, anki_session):
+    """Partial import does not clobber checksums for unselected notes, and
+    the verification commit stages only imported-note files — so unselected
+    changes still appear in the next delta diff, and a full round-trip
+    leaves the repo clean."""
+    from anki_git.engine.checksums import load_meta
+    from anki_git.engine.diff import compute_import_diff_delta
+    from anki_git.engine.exporter import export_collection
+    from anki_git.engine.importer import pull_from_repo
+
+    col = anki_session.collection
+    repo_path = tmp_path / "repo"
+
+    # --- create 2 notes in Anki ---
+    nt = col.models.by_name("Basic")
+    assert nt is not None
+
+    note1 = col.new_note(nt)
+    note1.fields[0] = "Note1 Front"
+    note1.fields[1] = "Note1 Back"
+    col.add_note(note1, col.decks.id("Default"))
+    nid1 = note1.id
+
+    note2 = col.new_note(nt)
+    note2.fields[0] = "Note2 Front"
+    note2.fields[1] = "Note2 Back"
+    col.add_note(note2, col.decks.id("Default"))
+    nid2 = note2.id
+
+    # --- export to repo (creates git repo + initial commit + meta) ---
+    export_collection(col, repo_path)
+
+    meta = load_meta(repo_path)
+    assert len(meta.get("note_checksums", {})) == 2
+
+    # --- modify both note files in the repo ---
+    for nid in (nid1, nid2):
+        f = repo_path / "decks" / "Default" / f"{nid}.md"
+        content = f.read_text(encoding="utf-8")
+        content = content.replace("Front", "Front Modified")
+        f.write_text(content, encoding="utf-8")
+
+    # --- delta diff detects both ---
+    delta = compute_import_diff_delta(col, repo_path)
+    assert delta.report.has_changes
+    assert len(delta.report.note_diffs) == 2
+
+    # --- simulate partial selection: only nid1 ---
+    selected_nids = {nid1}
+    filtered_anki = {k: v for k, v in delta.anki_checksums.items()
+                     if int(k) in selected_nids}
+    filtered_git = {k: v for k, v in delta.git_checksums.items()
+                    if int(k) in selected_nids}
+    filtered_repo_notes = {k: v for k, v in delta.repo_notes.items()
+                           if k in selected_nids}
+
+    result1 = pull_from_repo(
+        col, repo_path,
+        sync_mode="accept_all",
+        anki_checksums=filtered_anki,
+        git_checksums=filtered_git,
+        git_notes_lookup=filtered_repo_notes,
+        repo_notetypes=delta.repo_notetypes,
+    )
+    assert result1.notes_updated == 1
+    assert len(result1.errors) == 0
+
+    # --- nid2's checksum must still be in meta ---
+    meta = load_meta(repo_path)
+    checksums = meta.get("note_checksums", {})
+    assert str(nid2) in checksums, "nid2 checksum was clobbered"
+
+    # --- delta diff again: only nid2 should appear ---
+    delta2 = compute_import_diff_delta(col, repo_path)
+    assert delta2.report.has_changes, (
+        "nid2 should still show as pending after partial import"
+    )
+    remaining = {nd.nid for nd in delta2.report.note_diffs}
+    assert remaining == {nid2}, f"Expected only nid2 pending, got {remaining}"
+
+    # --- import remaining note ---
+    selected_nids2 = {nid2}
+    filtered_anki2 = {k: v for k, v in delta2.anki_checksums.items()
+                      if int(k) in selected_nids2}
+    filtered_git2 = {k: v for k, v in delta2.git_checksums.items()
+                     if int(k) in selected_nids2}
+    filtered_repo_notes2 = {k: v for k, v in delta2.repo_notes.items()
+                            if k in selected_nids2}
+
+    result2 = pull_from_repo(
+        col, repo_path,
+        sync_mode="accept_all",
+        anki_checksums=filtered_anki2,
+        git_checksums=filtered_git2,
+        git_notes_lookup=filtered_repo_notes2,
+        repo_notetypes=delta2.repo_notetypes,
+    )
+    assert result2.notes_updated == 1
+    assert len(result2.errors) == 0
+
+    # --- final delta diff: nothing should show ---
+    delta3 = compute_import_diff_delta(col, repo_path)
+    assert not delta3.report.has_changes, (
+        "All notes imported — nothing should remain pending"
+    )
+
+    # --- git status should be clean ---
+    from anki_git.engine.git_ops import open_repo
+    repo = open_repo(repo_path)
+    assert repo is not None
+    status = repo.git.status("--porcelain").strip()
+    assert not status, f"Expected clean repo, got: {status}"
