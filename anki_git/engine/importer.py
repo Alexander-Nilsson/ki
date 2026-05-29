@@ -129,20 +129,39 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
     assert anki_checksums is not None
     assert git_checksums is not None and git_notes_lookup is not None
 
+    _logger.info("DEBUG pull_from_repo: anki_checksums=%d entries, git_checksums=%d entries",
+                 len(anki_checksums), len(git_checksums))
+    anki_keys = set(anki_checksums)
+    git_keys = set(git_checksums)
+    _logger.info("DEBUG pull_from_repo: key_overlap=%d anki_only=%d git_only=%d first_5_match=%s",
+                 len(anki_keys & git_keys),
+                 len(anki_keys - git_keys),
+                 len(git_keys - anki_keys),
+                 {k: (anki_checksums.get(k) == git_checksums.get(k)) for k in sorted(anki_keys & git_keys)[:5]})
+
     meta = load_meta(repo_path)
     base_checksums = meta.get("note_checksums", {})
+    _logger.info("DEBUG pull_from_repo: base_checksums=%d entries", len(base_checksums))
 
     report = process_conflicts(
         base_checksums, anki_checksums, git_checksums,
         sync_mode, col, repo_path, notes_lookup=git_notes_lookup,
     )
+    _logger.info("DEBUG pull_from_repo: conflicts=%d (unresolved=%d)",
+                 len(report.conflicts), sum(1 for c in report.conflicts if not c.resolved))
+    for c in report.conflicts[:5]:
+        _logger.info("DEBUG conflict: nid=%s type=%s resolved=%s resolution=%s",
+                     c.nid, c.conflict_type, c.resolved, c.resolution)
 
     if conflict_callback and report.has_conflicts:
         report = conflict_callback(report)
+        _logger.info("DEBUG pull_from_repo: after callback conflicts=%d unresolved=%d",
+                     len(report.conflicts), sum(1 for c in report.conflicts if not c.resolved))
 
     resolved_nids: set[int] = set()
     delete_from_anki_nids: set[int] = set()
     delete_from_git_nids: set[int] = set()
+    anki_wins_nids: set[int] = set()
 
     for c in report.conflicts:
         if not c.resolved:
@@ -155,6 +174,28 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
             delete_from_anki_nids.add(c.nid)
         if c.conflict_type == ConflictType.DELETE_FROM_GIT:
             delete_from_git_nids.add(c.nid)
+        if c.resolution == "anki" and c.conflict_type not in (
+            ConflictType.DELETE_FROM_GIT, ConflictType.ALREADY_GONE,
+        ):
+            anki_wins_nids.add(c.nid)
+
+    _logger.info("DEBUG pull_from_repo: resolved_nids=%d delete_from_git_nids=%d anki_wins_nids=%d",
+                 len(resolved_nids), len(delete_from_git_nids), len(anki_wins_nids))
+
+    # Write Anki-winning content to git files so the repo converges.
+    # This prevents the same conflict from being detected on every import.
+    if anki_wins_nids:
+        from anki_git.engine.constants import DECKS_DIR
+        from anki_git.engine.export_helpers import capture_single_note
+        from anki_git.formats.notes_md import write_note_file
+
+        for nid in anki_wins_nids:
+            captured = capture_single_note(col, nid)
+            if captured is not None:
+                serialized, note = captured
+                deck_parts = note.deck.split("::")
+                note_dir = repo_path / DECKS_DIR / Path(*deck_parts)
+                write_note_file(note_dir, note, content=serialized)
 
     result = import_from_repo(col, repo_path, nid_filter=resolved_nids,
                               notes_lookup=git_notes_lookup,
@@ -180,24 +221,46 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
     from anki_git.engine.git_ops import open_repo
     repo = open_repo(repo_path)
 
-    # Preserve existing checksums and only update the imported notes
-    existing_checksums = meta.get("note_checksums", {})
-    existing_checksums.update(git_checksums)
-    meta["note_checksums"] = existing_checksums
-
     total_imported = result.notes_updated + result.notes_created
     total_notetypes = result.notetypes_updated + result.notetypes_created
-    if repo and (total_imported > 0 or total_notetypes > 0):
+    _logger.info("DEBUG pull_from_repo: total_imported=%d total_notetypes=%d", total_imported, total_notetypes)
+
+    # Determine which nids to keep staged in the verification commit.
+    needs_commit_nids: set[int] = resolved_nids | delete_from_git_nids | anki_wins_nids
+    if needs_commit_nids:
+        all_imported_nids = needs_commit_nids
+        needs_commit = True
+        _logger.info("DEBUG pull_from_repo: branch=import resolved=%d deleted=%d anki_wins=%d",
+                     len(resolved_nids), len(delete_from_git_nids), len(anki_wins_nids))
+    elif anki_checksums and git_checksums:
+        matching = {int(nid) for nid, a_cs in anki_checksums.items()
+                    if a_cs == git_checksums.get(nid)}
+        non_matching = {int(nid) for nid, a_cs in anki_checksums.items()
+                        if a_cs != git_checksums.get(nid)}
+        _logger.info("DEBUG pull_from_repo: branch=matching matching=%d non_matching=%d (first10=%s)",
+                     len(matching), len(non_matching), sorted(non_matching)[:10] if non_matching else [])
+        all_imported_nids = matching
+        needs_commit = bool(all_imported_nids)
+    else:
+        all_imported_nids = set()
+        needs_commit = False
+        _logger.info("DEBUG pull_from_repo: branch=none anki_cs=%s git_cs=%s",
+                     anki_checksums is not None, git_checksums is not None)
+
+    committed_checksums: dict[str, str] = {}
+    if repo and needs_commit:
         parts = []
         if total_imported:
             parts.append(f"{total_imported} notes")
         if total_notetypes:
             parts.append(f"{total_notetypes} notetypes")
+        if not parts:
+            parts.append("cleanup")
         msg = f"Import {', '.join(parts)} from repo"
-
-        all_imported_nids: set[int] = resolved_nids | delete_from_git_nids
+        _logger.info("DEBUG pull_from_repo: about to git-add-all")
         repo.git.add(all=True)
         staged_before = len(repo.git.diff("--cached", "--name-status").splitlines())
+        _logger.info("DEBUG pull_from_repo: staged_before=%d", staged_before)
 
         # Unstage note files that were NOT imported
         unstaged = 0
@@ -215,6 +278,7 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
             if nid is not None and nid not in all_imported_nids:
                 repo.git.reset("--", path_str)
                 unstaged += 1
+                _logger.info("DEBUG pull_from_repo: unstaged nid=%d path=%s", nid, path_str)
 
         staged_after = len(repo.git.diff("--cached", "--name-status").splitlines())
         _logger.info(
@@ -222,17 +286,39 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
             staged_before, unstaged, staged_after,
         )
 
+        committed = False
         try:
             repo.index.commit(msg)
             _logger.info("Verification commit created: %s", msg)
-        except Exception:
+            committed = True
+        except Exception as e:
             _logger.error(
                 "Verification commit skipped — no files staged. "
-                "resolved_nids=%s delete_from_git_nids=%s total_imported=%d",
+                "resolved_nids=%s delete_from_git_nids=%s total_imported=%d err=%s",
                 sorted(resolved_nids)[:10],
                 sorted(delete_from_git_nids)[:10],
                 total_imported,
+                e,
             )
+
+        # Record checksums only for nids that were actually committed
+        if committed:
+            for nid in all_imported_nids:
+                sn = str(nid)
+                if nid in anki_wins_nids:
+                    if sn in anki_checksums:
+                        committed_checksums[sn] = anki_checksums[sn]
+                elif sn in git_checksums:
+                    committed_checksums[sn] = git_checksums[sn]
+            _logger.info("DEBUG pull_from_repo: committed_checksums=%d entries", len(committed_checksums))
+
+    # Persist tracking metadata
+    existing_checksums = meta.get("note_checksums", {})
+    before_len = len(existing_checksums)
+    existing_checksums.update(committed_checksums)
+    meta["note_checksums"] = existing_checksums
+    _logger.info("DEBUG pull_from_repo: note_checksums %d->%d (added %d)",
+                 before_len, len(existing_checksums), len(committed_checksums))
 
     if repo:
         from contextlib import suppress

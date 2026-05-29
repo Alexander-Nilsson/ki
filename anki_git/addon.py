@@ -288,6 +288,9 @@ def import_action() -> None:
                 selected_notetypes.add(note.notetype)
 
         # Filter all pre-computed data to only include selected items
+        _logger.info("DEBUG import_action: selected_nids=%d, selected_notetypes=%d",
+                     len(selected_nids), len(selected_notetypes))
+        nids_checksums_before = len(data.anki_checksums)
         data.anki_checksums = {
             k: v for k, v in data.anki_checksums.items() if k in selected_nids
         }
@@ -300,6 +303,10 @@ def import_action() -> None:
         data.repo_notetypes = {
             k: v for k, v in data.repo_notetypes.items() if k in selected_notetypes
         }
+        _logger.info("DEBUG import_action: filtered anki_checksums %d->%d, git_checksums %d->%d",
+                     nids_checksums_before, len(data.anki_checksums),
+                     nids_checksums_before, len(data.git_checksums))
+        _logger.info("DEBUG import_action: first5_selected_nids=%s", sorted(selected_nids)[:5])
 
         def do_import(col):
             col_path = Path(col.path)
