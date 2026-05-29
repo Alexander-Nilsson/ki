@@ -44,14 +44,14 @@ def _apply_log_level():
     _logger.setLevel(level)
 
 
-# Setup file logging in the addon data directory
+_logging_setup_done = False
+
 def _setup_logging():
-    from aqt import mw
-    if mw is None or mw.addonManager is None:
+    global _logging_setup_done
+    if _logging_setup_done:
         return
-    addon_id = __name__.split(".")[0]
-    log_dir = Path(mw.addonManager.addonsFolder()) / addon_id / "user_files"
     try:
+        log_dir = Path(__file__).parent / "user_files"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "anki_git.log"
         file_handler = logging.FileHandler(log_path, encoding="utf-8")
@@ -63,6 +63,7 @@ def _setup_logging():
         _logger.addHandler(file_handler)
         _apply_log_level()
         _logger.info("AnkiGit logger initialized. Logging to %s", log_path)
+        _logging_setup_done = True
     except Exception as e:
         print(f"AnkiGit: Could not setup file logging: {e}")
 

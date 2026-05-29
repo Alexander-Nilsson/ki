@@ -197,8 +197,10 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
 
         all_imported_nids: set[int] = resolved_nids | delete_from_git_nids
         repo.git.add(all=True)
+        staged_before = len(repo.git.diff("--cached", "--name-status").splitlines())
 
         # Unstage note files that were NOT imported
+        unstaged = 0
         for line in repo.git.diff("--cached", "--name-status").splitlines():
             if not line.strip():
                 continue
@@ -212,11 +214,25 @@ def pull_from_repo(col, repo_path: Path, conflict_callback=None,
             nid = _nid_from_path(p)
             if nid is not None and nid not in all_imported_nids:
                 repo.git.reset("--", path_str)
+                unstaged += 1
+
+        staged_after = len(repo.git.diff("--cached", "--name-status").splitlines())
+        _logger.info(
+            "Verification commit: %d files staged, %d unstaged, %d remaining",
+            staged_before, unstaged, staged_after,
+        )
 
         try:
             repo.index.commit(msg)
+            _logger.info("Verification commit created: %s", msg)
         except Exception:
-            _logger.warning("Verification commit skipped (no files staged)")
+            _logger.error(
+                "Verification commit skipped — no files staged. "
+                "resolved_nids=%s delete_from_git_nids=%s total_imported=%d",
+                sorted(resolved_nids)[:10],
+                sorted(delete_from_git_nids)[:10],
+                total_imported,
+            )
 
     if repo:
         from contextlib import suppress
