@@ -5,7 +5,7 @@ This module registers Anki hooks only when running inside Anki.
 The engine/ and formats/ layers can be imported and tested independently.
 """
 
-version = "0.1.6"
+version = "0.1.7"
 
 
 def init_addon():
