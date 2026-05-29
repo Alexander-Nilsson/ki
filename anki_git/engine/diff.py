@@ -273,7 +273,9 @@ def _diff_template_lists(old_tmpls, new_tmpls) -> list[ComponentChange]:
             ))
         elif ot.qfmt != nt.qfmt or ot.afmt != nt.afmt:
             changes.append(ComponentChange(
-                component_type="template", name=name, status="modified"
+                component_type="template", name=name, status="modified",
+                old_value=f"--- front.html\n{ot.qfmt}\n--- back.html\n{ot.afmt}",
+                new_value=f"--- front.html\n{nt.qfmt}\n--- back.html\n{nt.afmt}",
             ))
     return changes
 
